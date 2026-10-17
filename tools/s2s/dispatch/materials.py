@@ -16,6 +16,7 @@ MATERIALS = {
     '动作识别': ('镜头表:片段及衔接投影', '片段表:本段投影', '声音记录:仅起止',
                '角色卡:已确认外观', '字幕记录:非台词画面文字', '帧:白名单'),
     '角色卡': ('角色卡', '声音记录', '字幕记录', '镜头表', '临时人物',
+              '口型记录:句级与轨迹证据投影', '声纹聚类', '声纹候选:存在时',
               '片段结果:人物与口型投影', '帧:白名单'),
     '成稿': ('镜头表:不含帧路径', '动作记录:已确认', '归属表:已确认', '声音记录',
            '字幕记录', '角色卡', '待核对', '问题清单:定向改写', '工作稿:定向改写', '对照表:定向改写'),
@@ -132,6 +133,19 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
                      '声音记录': read('声音记录.json'), '字幕记录': read('字幕记录.json')})
         if role == '角色卡':
             data['临时人物'] = read('临时人物.json', optional=True)
+            if (episode / '口型记录.json').is_file():
+                lipsync = read('口型记录.json')
+                # 逐帧测量曲线体积很大，身份核对使用句级结论、检测框及冲突证据。
+                data['口型记录'] = {
+                    '句': [{**{k: v for k, v in row.items() if k != '轨迹'},
+                            '轨迹': [{k: v for k, v in track.items()
+                                      if k not in ('曲线', '模型曲线')}
+                                     for track in row.get('轨迹', [])]}
+                           for row in lipsync.get('句', [])],
+                    '声线配对': lipsync.get('声线配对', [])}
+            for name in ('声纹聚类', '声纹候选'):
+                if (episode / (name + '.json')).is_file():
+                    data[name] = read(name + '.json')
             # 片段原始响应保留口型；合并动作记录本身没有口型字段。
             people = []
             for path in sorted((episode / '派发结果' / '动作识别').glob('*.json')):

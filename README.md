@@ -9,9 +9,9 @@
 ```
 视频
  ├─ 固定处理流程（本机工具）
- │   镜头切分与取帧 · 两路语音识别与交叉核对 · 按人声切句 · 声纹聚类 · 口型检测 · 字幕识别（仅参考）
+ │   镜头切分与取帧 · 本地 Qwen3-ASR 单路识别 · 按人声切句 · 声纹聚类 · 口型检测 · 字幕识别（仅参考）
  │
- ├─ 人工回听：两路不一致或只有一路识别出的句子，在离线回听页上逐句裁定
+ ├─ 人工回听：截断、时间异常、疑似漏段、重叠或身份冲突的片段，在离线回听页上逐句裁定
  │
  └─ 角色 agent（按集）
      动作识别 → 角色卡（认人、对白归属）→ 成稿 → 独立验收 → 返修（最多 3 轮）→ 正式稿
@@ -38,20 +38,20 @@
 
 | 用途 | 当前配置 |
 |---|---|
-| 语音识别 | 主路本地 Qwen3-ASR 0.6B，副路 Grok `/v1/stt` |
+| 语音识别 | 本地 Qwen3-ASR 0.6B，唯一语音转文字路线 |
 | 人声检测 | 本地 FSMN-VAD |
 | 声纹 | 本地 CAM++（sherpa-onnx） |
 | 口型 | 本地 MediaPipe、YuNet、Light-ASD |
 | 识图 | pi 调用 `opencode-go/deepseek-v4.1-flash`，思考级别 high |
-| 角色 agent | pi 调用 `openai-codex/gpt-6.1-sol`，思考级别 high；看图的角色走识图配置 |
+| 角色 agent | pi 调用 `opencode-go/deepseek-v4.1-flash`，思考级别 high |
 
-opencode-go 只允许 `deepseek-v4.1-flash` 和 `glm-5.3-flash`，列表写在 `config/models.json` 的 `allowed_models`，运行器调用前校验。
+所有生产生成式调用只允许 `opencode-go/deepseek-v4.1-flash`，默认值、角色覆盖、环境变量和重答均在调用前校验，不回退其他模型。字幕只作人工参考。实现及离线/真实验收状态见 `TODO.md`，真实识别质量须单独验收。
 
 ## 开始使用
 
 ```bash
 uv sync                                  # 主环境
-cp .env.example .env                     # 填写密钥；Grok 未配置密钥时使用 Pi 已登录的 xAI 凭据
+cp .env.example .env                     # 按需填写本地路径与配置覆盖；pi 需已授权 DeepSeek
 uv run pytest -m "not live"              # 单元测试
 ```
 
