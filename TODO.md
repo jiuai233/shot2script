@@ -36,6 +36,18 @@
 - [x] `13d3287`：提交验收提示词，同步阻断分类及 JSON 示例，防止前后级别冲突，保留真实证据和例外边界。
 - [x] 创建 Draft PR #1：`feat/deepseek-production-pipeline` → `main`，尚未合并。PR 是可检查的进度容器，不代表生产链路已完成。
 
+
+## PROD-11：Pi / 直连 API 实证对比（新增）
+
+- [x] 已实现可选对照基准脚本 \`tools/benchmark_dp.py\`，三个基线：受控只读 Pi（pi-read）、无工具 Pi 图片附件（pi-attach）、同 OpenCode Go DeepSeek 模型直接 HTTP（direct），另支持独立的精简 Prompt 变体（direct-tuned）。
+- [x] 已提交 \`tests/test_benchmark_dp.py\`，本地离线单测 **7 passed**，使用 httpx MockTransport，不触发真实模型；并将 GitHub Actions 改成真正执行定向 pytest，而不是只下载依赖。
+- [x] GitHub Actions `benchmark-offline` job 已成功执行定向 `pytest` 和 CLI 离线预检；这不等于完整项目测试或真实模型测试通过。
+- [ ] 在装有 Pi 与 OpenCode Go 凭据的本机使用 \`--live\` 实测同模型、同帧、同提示词；目前**未实测远程 API 成功率或速度**。官方文档与 Pi 模型目录基础 URL 有差异，以本地实际端点核对后再进行对比。
+- [ ] 用 E01 困难片段的人工标注评估漏动作、无据动作、人物/说话人错配，不将 JSON 格式通过当作识别质量通过；同时记录延迟、输入输出/缓存 token 与工具调用次数。
+- [ ] 如果直连表现好，再实现可切换的生产 Runner，保留现有权限、Schema、缓存、日志和重试；不在没有证据时立即弃用 Pi。
+
+测试方法与安全边界详见 \`docs/Pi与直连API对照实验.md\`。
+
 ## 生产改造清单
 
 - [x] **PROD-01 PRD**：已提交生产规范性补充与主 PRD 1.3。文档要求已保存，不等于运行时已经执行。

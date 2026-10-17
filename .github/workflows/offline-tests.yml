@@ -7,7 +7,7 @@ on:
 permissions:
   contents: read
 jobs:
-  offline:
+  benchmark-offline:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -17,11 +17,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Prepare dependencies for isolated offline tests
-        run: |
-          python -m pip download --no-deps --only-binary=:all: --dest test-wheels 'scenedetect==0.6.7.1' 'sherpa-onnx==1.13.8' 'sherpa-onnx-core==1.13.8'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: offline-test-wheels
-          path: test-wheels/
-          retention-days: 1
+      - name: Install lightweight testing dependencies
+        run: python -m pip install pytest httpx pillow jsonschema
+      - name: Run safe offline benchmark tests (no model calls)
+        run: python -m pytest -q tests/test_benchmark_dp.py
+      - name: Confirm benchmark CLI defaults to offline-only
+        run: python tools/benchmark_dp.py --prompt prompts/04-动作识别.md --variants pi-attach,direct
