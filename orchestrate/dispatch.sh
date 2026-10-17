@@ -1,13 +1,14 @@
 #!/bin/bash
 # 派发一个任务给执行 agent。
 # 用法：orchestrate/dispatch.sh <任务编号> [补充说明]
-# 模型可用环境变量切换：WORKER_MODEL、WORKER_THINKING
+# 模型可用环境变量切换：WORKER_THINKING；WORKER_MODEL 只接受生产模型
 set -u
 cd "$(dirname "$0")/.." || exit 2
 
 TASK="${1:?需要任务编号}"
 EXTRA="${2:-}"
-MODEL="${WORKER_MODEL:-openai-codex/gpt-6.1-sol}"
+MODEL="${WORKER_MODEL:-opencode-go/deepseek-v4.1-flash}"
+[ "$MODEL" = "opencode-go/deepseek-v4.1-flash" ] || { echo "生产模型只允许 opencode-go/deepseek-v4.1-flash"; exit 2; }
 THINKING="${WORKER_THINKING:-high}"
 TS="$(date +%Y%m%d-%H%M%S)"
 LOG="orchestrate/logs/${TASK}-${TS}.log"

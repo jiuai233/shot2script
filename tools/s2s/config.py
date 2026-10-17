@@ -9,6 +9,7 @@ from dotenv import dotenv_values
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "models.json"
+PRODUCTION_MODEL = "opencode-go/deepseek-v4.1-flash"
 
 
 class ConfigError(ValueError):
@@ -41,6 +42,9 @@ def load_config() -> dict:
         for name, target, field in overrides:
             if env.get(name):
                 target[field] = env[name]
+        for settings in (data["vision"], *data["agents"].values()):
+            if "model" in settings:
+                check_model(settings["model"])
         return data
     except (OSError, ValueError, TypeError) as exc:
         raise ConfigError(f"无法读取模型配置 {path}：{exc}") from exc
@@ -56,12 +60,9 @@ def get_asr_backend(name: str | None = None) -> dict:
 
 
 def check_model(model: str) -> None:
-    """模型须在 allowed_models 中登记；未在 allowed_models 中出现的提供方不受限制。"""
-    allowed = load_config().get("allowed_models", {})
-    provider, _, model_id = model.partition("/")
-    model_id = model_id.split(":", 1)[0]
-    if provider in allowed and model_id not in allowed[provider]:
-        raise ConfigError(f"模型 {model} 不在允许列表中；{provider} 只允许：{'、'.join(allowed[provider])}")
+    """生产接入固定；配置文件与单次覆盖不能扩展白名单。"""
+    if model != PRODUCTION_MODEL:
+        raise ConfigError(f"生产模型只允许 {PRODUCTION_MODEL}，不允许：{model}")
 
 
 def get_vision() -> dict:

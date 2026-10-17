@@ -50,7 +50,7 @@
   "agents": {
     "default": {
       "runner": "pi",
-      "model": "openai-codex/gpt-6.1-sol",
+      "model": "opencode-go/deepseek-v4.1-flash",
       "thinking": "high"
     },
     "全剧主控": {
@@ -82,8 +82,7 @@
   },
   "allowed_models": {
     "opencode-go": [
-      "deepseek-v4.1-flash",
-      "glm-5.3-flash"
+      "deepseek-v4.1-flash"
     ]
   },
   "diarize": {

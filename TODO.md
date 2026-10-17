@@ -16,7 +16,7 @@
 
 - [x] **PROD-01 PRD**：已提交生产规范性补充与主 PRD 1.3。文档要求已保存，不等于运行时已经执行。
 - [x] **PROD-02 提示词全链路同步**：已同步全剧/单集主控、角色卡、动作识别、成稿、验收、索引、数据约定和 README；合入 main 的口型/声纹资料装配。
-- [ ] **PROD-03 生产模型**：全剧/单集主控、角色卡、动作识别、成稿、验收全部使用 DeepSeek；调用前校验默认值、角色覆盖、环境变量及重试。Sol、GLM、Grok 不进入生产链路，不隐式回退。
+- [x] **PROD-03 生产模型**：六个角色与识图均为 DeepSeek；配置、环境变量、角色覆盖、单次参数和每次重答调用前校验，配置不能扩大白名单；模型调用失败不回退。远程语音入口在阶段 3 处理。
 - [ ] **PROD-04 单路语音**：只保留本地 Qwen3-ASR；移除生产入口对 Grok STT、双路词时间和两路一致状态的依赖，保留本地 VAD、声纹和口型组件。
 - [ ] **PROD-05 异常核对**：单路以实际音频/时间异常、疑似漏段、重叠和身份冲突触发待核对；调整声音 Schema、回听页面、裁定迁移和下游引用。单路不能伪装成两路一致或人工确认。
 - [ ] **PROD-06 角色证据**：同步 main 上已有口型/声纹装配改动，再补缺失、过期、句内换人、换装与跨集候选的离线测试；不得把旧角色数硬当新集人数上限来合并新人。
@@ -43,7 +43,8 @@
 - 阶段 1：同步 main 与全部提示词、单路数据约定、README。
 - 基线：`.venv/bin/python -m pytest -m 'not live' -q`，1188 通过、1 失败、2 跳过、3 未选。失败为 PRD 示例格式与测试夹具过期；已同步。
 - 阶段 1 验证：`.venv/bin/python -m pytest -q tests/test_t5_lint_script.py tests/test_t8_dispatch.py tests/test_t9b_materials.py tests/test_t9e_dispatch.py -m 'not live'`，97 通过。
-- 运行时模型与单路迁移尚在后续阶段；未调用真实模型，未进行真实视频质量验收。两项跳过因主环境未安装 MediaPipe。
+- 阶段 2 验证：`.venv/bin/python -m pytest -q tests/test_production_models.py tests/test_t1_config.py tests/test_t1_interfaces.py tests/test_t1_runners.py tests/test_t8_dispatch.py tests/test_t9e_dispatch.py -m 'not live'`，105 通过。
+- 单路语音迁移尚在阶段 3；未调用真实模型，未进行真实视频质量验收。两项跳过因主环境未安装 MediaPipe。
 
 ## 原任务与素材状态（历史记录，需按新生产路线复核）
 

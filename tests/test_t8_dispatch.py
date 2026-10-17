@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+from s2s import config
 from s2s.dispatch.controllers import episode_prompt, mark_step, start_controller
 from s2s.dispatch.materials import assemble, render
 from s2s.dispatch.results import extract_json, extract_result, validate_result
@@ -135,6 +136,7 @@ def test_validation(board, action_result):
 def test_retry_and_log(board, action_result):
     calls = []
     def fake(role, prompt, **kwargs):
+        assert kwargs["model"] == config.PRODUCTION_MODEL
         calls.append(prompt)
         return '{}' if len(calls) == 1 else json.dumps(action_result)
     output = board / '派发结果/动作识别/E01-P01.json'

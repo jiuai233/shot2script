@@ -32,7 +32,7 @@ def record(name, result, elapsed):
     print(f"\n{name}（{elapsed:.2f} 秒）：{result}")
 
 
-@pytest.mark.parametrize("model", ["opencode-go/deepseek-v4.1-flash", "opencode-go/glm-5.3-flash"])
+@pytest.mark.parametrize("model", ["opencode-go/deepseek-v4.1-flash"])
 def test_vision_switch_model(monkeypatch, frame20, model):
     monkeypatch.setenv("S2S_VISION_MODEL", model)
     assert config.get_vision()["model"] == model
@@ -45,7 +45,7 @@ def test_vision_switch_model(monkeypatch, frame20, model):
 def test_default_agent(monkeypatch):
     for name in ("S2S_CONFIG", "S2S_AGENT_MODEL", "S2S_AGENT_RUNNER"):
         monkeypatch.delenv(name, raising=False)
-    assert config.get_agent("角色卡")["model"] == "openai-codex/gpt-6.1-sol"
+    assert config.get_agent("角色卡")["model"] == "opencode-go/deepseek-v4.1-flash"
     started = time.monotonic()
     result = agent.run("角色卡", "只回复 OK", timeout=90)
     WORK.mkdir(parents=True, exist_ok=True)

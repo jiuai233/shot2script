@@ -35,9 +35,9 @@ def test_defaults():
 
 @pytest.mark.parametrize("variable,value,reader,field", [
     ("S2S_ASR_PROVIDER", "doubao", config.get_asr_backend, "provider"),
-    ("S2S_VISION_MODEL", "opencode-go/glm-5.3-flash", config.get_vision, "model"),
+    ("S2S_VISION_MODEL", "opencode-go/deepseek-v4.1-flash", config.get_vision, "model"),
     ("S2S_VISION_RUNNER", "opencode", config.get_vision, "runner"),
-    ("S2S_AGENT_MODEL", "provider/other", lambda: config.get_agent("角色卡"), "model"),
+    ("S2S_AGENT_MODEL", "opencode-go/deepseek-v4.1-flash", lambda: config.get_agent("角色卡"), "model"),
     ("S2S_AGENT_RUNNER", "opencode", lambda: config.get_agent("角色卡"), "runner"),
 ])
 def test_environment_override(monkeypatch, variable, value, reader, field):
@@ -46,20 +46,20 @@ def test_environment_override(monkeypatch, variable, value, reader, field):
 
 
 def test_vision_inheritance_tracks_environment(monkeypatch):
-    monkeypatch.setenv("S2S_VISION_MODEL", "provider/new")
-    assert config.get_agent("动作识别")["model"] == "provider/new"
-    monkeypatch.setenv("S2S_AGENT_MODEL", "provider/text")
-    assert config.get_agent("验收")["model"] == "provider/new"
-    assert config.get_agent("角色卡")["model"] == "provider/text"
+    monkeypatch.setenv("S2S_VISION_MODEL", "opencode-go/deepseek-v4.1-flash")
+    assert config.get_agent("动作识别")["model"] == "opencode-go/deepseek-v4.1-flash"
+    monkeypatch.setenv("S2S_AGENT_MODEL", "opencode-go/deepseek-v4.1-flash")
+    assert config.get_agent("验收")["model"] == "opencode-go/deepseek-v4.1-flash"
+    assert config.get_agent("角色卡")["model"] == "opencode-go/deepseek-v4.1-flash"
 
 
 def test_role_override_wins_over_inherited_fields(custom_config, monkeypatch):
     data, path = custom_config
-    data["agents"]["动作识别"].update(model="provider/specific", thinking="low")
+    data["agents"]["动作识别"].update(model="opencode-go/deepseek-v4.1-flash", thinking="low")
     path.write_text(json.dumps(data), encoding="utf-8")
-    monkeypatch.setenv("S2S_VISION_MODEL", "provider/shared")
+    monkeypatch.setenv("S2S_VISION_MODEL", "opencode-go/deepseek-v4.1-flash")
     result = config.get_agent("动作识别")
-    assert result["model"] == "provider/specific"
+    assert result["model"] == "opencode-go/deepseek-v4.1-flash"
     assert result["thinking"] == "low"
     assert result["max_images_per_call"] == 12
     assert "use" not in result
@@ -67,10 +67,10 @@ def test_role_override_wins_over_inherited_fields(custom_config, monkeypatch):
 
 def test_whole_config_switch(custom_config):
     data, path = custom_config
-    data["vision"]["model"] = "other/model"
+    data["vision"]["model"] = "opencode-go/deepseek-v4.1-flash"
     data["runners"]["pi"]["bin"] = "/custom/pi"
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert config.get_vision()["model"] == "other/model"
+    assert config.get_vision()["model"] == "opencode-go/deepseek-v4.1-flash"
     assert config.get_runner_config("pi")["bin"] == "/custom/pi"
 
 
@@ -122,8 +122,10 @@ def test_disallowed_model_rejected():
     with pytest.raises(config.ConfigError):
         config.check_model("opencode-go/glm-5.3")
     config.check_model("opencode-go/deepseek-v4.1-flash")
-    config.check_model("opencode-go/glm-5.3-flash:high")
-    config.check_model("openai-codex/gpt-6.1-sol")
+    with pytest.raises(config.ConfigError):
+        config.check_model("opencode-go/deepseek-v4.1-flash:high")
+    with pytest.raises(config.ConfigError):
+        config.check_model("openai-codex/gpt-6.1-sol")
 
 
 def test_runner_refuses_disallowed_model():

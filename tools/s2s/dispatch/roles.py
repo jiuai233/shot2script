@@ -20,7 +20,7 @@ class DispatchError(RuntimeError):
 
 def settings_for(role, package):
     settings = config.get_agent(role)
-    # 角色卡配置默认是文本模型；只要本次提供帧，也必须走当前 vision 配置。
+    # 有帧时沿用 vision 的图片与运行器参数；所有角色仍只用 DeepSeek。
     if package.images:
         settings.update(config.get_vision())
     config.check_model(settings['model'])
@@ -156,6 +156,7 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                     attempt_row = {'尝试': attempt + 1}
                     row.setdefault('尝试记录', []).append(attempt_row)
                     try:
+                        config.check_model(settings['model'])
                         raw = (call or agent.run)(role, prompt, attachments=[], images=[],
                                                **{**settings, **options, 'timeout': timeout})
                         response = decode_response(raw)

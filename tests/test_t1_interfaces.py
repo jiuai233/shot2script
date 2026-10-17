@@ -24,10 +24,10 @@ def mocked_runner(monkeypatch):
 
 
 def test_vision_overrides(mocked_runner):
-    assert vision.ask(["frame.jpg"], "描述", model="p/m", runner="opencode", timeout=15) == "结果"
+    assert vision.ask(["frame.jpg"], "描述", model="opencode-go/deepseek-v4.1-flash", runner="opencode", timeout=15) == "结果"
     prompt, settings = mocked_runner[0]
     assert prompt == "描述"
-    assert settings == {"images": ["frame.jpg"], "runner": "opencode", "model": "p/m", "thinking": "high", "timeout": 15}
+    assert settings == {"images": ["frame.jpg"], "runner": "opencode", "model": "opencode-go/deepseek-v4.1-flash", "thinking": "high", "timeout": 15}
 
 
 def test_vision_image_limit(mocked_runner):
@@ -40,9 +40,9 @@ def test_vision_image_limit(mocked_runner):
 
 
 def test_agent_attachments_and_inheritance(mocked_runner):
-    assert agent.run("角色卡", "只回复 OK", ["record.json"], ["frame.jpg"], model="p/custom", tools=True) == "结果"
+    assert agent.run("角色卡", "只回复 OK", ["record.json"], ["frame.jpg"], model="opencode-go/deepseek-v4.1-flash", tools=True) == "结果"
     _, settings = mocked_runner[0]
-    assert settings == {"images": ["frame.jpg"], "files": ["record.json"], "model": "p/custom", "runner": "pi", "thinking": "high", "tools": True}
+    assert settings == {"images": ["frame.jpg"], "files": ["record.json"], "model": "opencode-go/deepseek-v4.1-flash", "runner": "pi", "thinking": "high", "tools": True}
 
 
 def test_agent_vision_role_limit(mocked_runner):

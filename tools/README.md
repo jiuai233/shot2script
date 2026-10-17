@@ -45,10 +45,10 @@ pi 和 opencode 使用各自已有的模型授权，运行接口不会提取或�
 S2S_ASR_PROVIDER=doubao uv run python -c 'from s2s.asr import get_backend; print(type(get_backend()).__name__)'
 
 # 识图模型。
-S2S_VISION_MODEL=opencode-go/glm-5.3-flash uv run python -c 'from s2s import vision; print(vision.ask(["tmp/T1/frame20.jpg"], "描述画面"))'
+S2S_VISION_MODEL=opencode-go/deepseek-v4.1-flash uv run python -c 'from s2s import vision; print(vision.ask(["tmp/T1/frame20.jpg"], "描述画面"))'
 
 # 默认角色模型及其运行器；使用 provider/model 格式填写模型。
-S2S_AGENT_MODEL=提供方/模型 S2S_AGENT_RUNNER=opencode uv run python -c 'from s2s import agent; print(agent.run("角色卡", "只回复 OK"))'
+S2S_AGENT_MODEL=opencode-go/deepseek-v4.1-flash S2S_AGENT_RUNNER=opencode uv run python -c 'from s2s import agent; print(agent.run("角色卡", "只回复 OK"))'
 ```
 
 `S2S_VISION_RUNNER` 切换识图运行器。`S2S_AGENT_MODEL`、`S2S_AGENT_RUNNER` 修改 `agents.default`，不影响继承 `vision` 的角色；角色显式配置的字段优先于继承字段。只需修改某个角色时，在 `agents.<角色>` 中写对应字段。
@@ -91,7 +91,7 @@ text = agent.run("动作识别", "核对图片与资料", attachments=["资料.j
 ```python
 from s2s.runners import run
 
-text = run("只回复 OK", images=[], files=[], model="openai-codex/gpt-6.1-sol", thinking="high", runner="pi", tools=False, timeout=120)
+text = run("只回复 OK", images=[], files=[], model="opencode-go/deepseek-v4.1-flash", thinking="high", runner="pi", tools=False, timeout=120)
 ```
 
 - pi 使用非交互、无会话、无上下文文件模式，附件通过 `@绝对路径` 传入；默认加 `--no-tools`。
@@ -122,13 +122,13 @@ uv run pytest -m "not live"
 uv run pytest -m live -v -s -x
 ```
 
-实际测试要求 `videos/sample/E01.mp4` 存在，使用 `/opt/homebrew/bin/ffmpeg` 取第 20 秒帧，在 `tmp/T1/` 保存帧与响应。测试依次通过 `S2S_VISION_MODEL` 使用 `opencode-go/deepseek-v4.1-flash`、`opencode-go/glm-5.3-flash`，再调用默认角色卡模型并检查输出为 `OK`。每次模型调用最多 90 秒，不自动重试。
+实际测试要求 `videos/sample/E01.mp4` 存在，使用 `/opt/homebrew/bin/ffmpeg` 取第 20 秒帧，在 `tmp/T1/` 保存帧与响应。测试依次通过 `S2S_VISION_MODEL` 使用 `opencode-go/deepseek-v4.1-flash`，再调用默认角色卡模型并检查输出为 `OK`。每次模型调用最多 90 秒，不自动重试。
 
 未显式传入 `-m` 时，`pytest` 会包含实际调用测试；离线开发使用 `-m "not live"`。
 
 ## 模型允许列表
 
-`config/models.json` 的 `allowed_models` 按提供方登记允许的模型。opencode-go 只允许 `deepseek-v4.1-flash`、`glm-5.3-flash`，默认使用 `deepseek-v4.1-flash`。`runners.run` 调用前用 `config.check_model` 校验，列表外的模型抛出 `ConfigError`；未登记的提供方不受限制。
+生产仅接受完整标识 `opencode-go/deepseek-v4.1-flash`。配置文件、环境变量、角色显式覆盖、单次参数、主控和重答路径都执行调用前检查；未知提供方、其他模型和带后缀标识均拒绝。配置中的 `allowed_models` 记录生产接入，不能扩展代码允许范围。失败直接报错，不回退模型。
 
 ## 工具清单
 
