@@ -14,44 +14,29 @@ uv run pytest -m "not live"
 
 项目使用 Python 3.12。预装 pytest、jsonschema、httpx、Pillow、lxml、python-docx、PySceneDetect、python-dotenv、rapidfuzz。PySceneDetect 使用支持 `opencv` 扩展的 0.6 系列，OpenCV 随扩展安装。
 
-### 服务变量
+### 环境变量
 
-将 `.env.example` 复制为 `.env`，填写下列变量。`.env` 已在 `.gitignore` 中排除。
-
-- `ARK_DOUBAO_API_KEY`：豆包方舟密钥。
-- `ARK_DOUBAO_PROXY`：豆包请求使用的代理地址；不需要代理时留空。
-- `XAI_API_KEY`：Grok 密钥。
-
-配置模块自动读取项目根目录的 `.env`，已有进程环境变量优先。空的 `S2S_*` 变量不覆盖模型配置。ASR 返回配置只包含密钥变量名；读取实际密钥可调用 `s2s.config.get_environment()`，返回值不得记录到日志。
-
-pi 和 opencode 使用各自已有的模型授权，运行接口不会提取或复制其登录凭据。
+`.env.example` 提供配置覆盖项，复制为 `.env` 后按本机路径填写。进程环境优先；空的 `S2S_*` 不覆盖配置。语音仅使用本地模型，不需要远程语音密钥。pi 和 opencode 使用各自已有的 DeepSeek 授权，运行接口不提取或复制登录凭据。
 
 ## 模型配置
 
-默认文件：`config/models.json`。顶层包含五项：
+默认文件：`config/models.json`。主要字段：
 
-- `asr`：`provider` 选择后端；`backends` 保存各后端的 `api_base`、`model`、`key_env` 和可选 `proxy_env`。
+- `asr`：`provider=local`，`backends.local.model=qwen3-asr-0.6b`；`segmentation` 设置人声检测和切句参数。
 - `vision`：`runner`、`model`、`thinking`、`max_images_per_call`。
 - `agents`：`default` 为默认角色配置；角色可用 `use: "default"` 或 `use: "vision"` 继承，角色自身字段覆盖继承字段。
 - `runners`：以运行器名为键，`bin` 指向可执行文件名或绝对路径。
-- 整个配置文件可用 `S2S_CONFIG=/绝对路径/models.json` 替换。
+- `diarize`：CAM++ 本地声纹、相似度阈值和 `lipsync` 约束。
+
+整个配置文件可用 `S2S_CONFIG=/绝对路径/models.json` 替换，模型与 ASR 限制仍然生效。
 
 `get_asr_backend()`、`get_vision()`、`get_agent(角色)` 每次读取当前配置并返回独立的字典。
 
-### 临时切换
+### 配置覆盖
 
-```bash
-# ASR 后端；实际识别实现由声音识别模块提供。
-S2S_ASR_PROVIDER=doubao uv run python -c 'from s2s.asr import get_backend; print(type(get_backend()).__name__)'
+`S2S_VISION_RUNNER`、`S2S_AGENT_RUNNER` 可修改运行器。模型变量只接受 `opencode-go/deepseek-v4.1-flash`，`S2S_ASR_PROVIDER` 只接受 `local`。
 
-# 识图模型。
-S2S_VISION_MODEL=opencode-go/deepseek-v4.1-flash uv run python -c 'from s2s import vision; print(vision.ask(["tmp/T1/frame20.jpg"], "描述画面"))'
-
-# 默认角色模型及其运行器；使用 provider/model 格式填写模型。
-S2S_AGENT_MODEL=opencode-go/deepseek-v4.1-flash S2S_AGENT_RUNNER=opencode uv run python -c 'from s2s import agent; print(agent.run("角色卡", "只回复 OK"))'
-```
-
-`S2S_VISION_RUNNER` 切换识图运行器。`S2S_AGENT_MODEL`、`S2S_AGENT_RUNNER` 修改 `agents.default`，不影响继承 `vision` 的角色；角色显式配置的字段优先于继承字段。只需修改某个角色时，在 `agents.<角色>` 中写对应字段。
+`S2S_AGENT_MODEL`、`S2S_AGENT_RUNNER` 修改 `agents.default`，不影响继承 `vision` 的角色。角色显式字段优先于继承字段，模型仍须通过生产校验。
 
 ## 接口与模块
 
@@ -102,18 +87,14 @@ text = run("只回复 OK", images=[], files=[], model="opencode-go/deepseek-v4.1
 ### `s2s.asr`：声音识别接口
 
 ```python
-from s2s.asr import get_backend, Sentence
-
-backend = get_backend()          # 当前 asr.provider
-backend = get_backend("doubao") # 显式选择后端
+from s2s.asr import get_backend
+backend = get_backend("local")
 sentences = backend.transcribe("音频.wav", start=10.0, end=20.0)
 ```
 
-当前 Grok、豆包为接口占位，调用 `transcribe` 会抛出明确的“未实现”异常。
+生产注册表只含本地 Qwen3-ASR；其他后端、其他本地模型和启用双路的配置会被拒绝。Qwen 单次窗口最长 300 秒，整集入口按不重叠窗口处理。`last_words` 保存真实词时间，原始响应写入 `素材/asr_raw/`。
 
-`base.py` 定义 `ASRBackend` 和 `Sentence`，`grok.py`、`doubao.py` 保存对应后端，`__init__.py` 提供 `BACKENDS` 注册表和 `get_backend()`。后端构造参数为解析后的配置字典，可在 `.settings` 中读取。
-
-`Sentence` 字段为 `start`、`end`、`text`、`speaker`、`clarity`；起止时间使用本集内 `MM:SS.s`，`clarity` 为“清楚”“重叠”或“听不清”。`transcribe` 的窗口参数以秒计，返回时间相对整集。编号及转换为声音记录的中文字段由后续保存流程处理。
+`Sentence` 包含 `start`、`end`、`text`、`speaker`、`clarity`，起止为本集内 `MM:SS.s`。本地 ASR 不识别人，声线为空；整集流程中的占位标签不代表人物，须结合声纹侧表和角色证据核对。
 
 ## 实际调用测试
 
@@ -172,23 +153,14 @@ assert fmt(83.4) == "01:23.4"
 
 ```bash
 uv run python tools/asr.py videos/sample/E01.mp4 剧目/示例/E01
-uv run python tools/asr.py videos/sample/E01.mp4 剧目/示例/E01 --provider grok --keyterm 林舟 --keyterm 沈宁
-uv run python tools/asr_window.py videos/sample/E01.mp4 00:10.0 00:15.0 --provider doubao --raw-dir tmp/asr-window
+uv run python tools/asr_window.py videos/sample/E01.mp4 00:10.0 00:15.0 --raw-dir tmp/asr-window
 ```
 
-`asr.py` 根据配置或 `--provider` 切换 Grok / 豆包，生成本集 `声音记录.json`，原始响应保存在本集 `素材/asr_raw/`；已有声音记录时拒绝覆盖。集号默认从目录名 `E01` 取得，也可用 `--episode` 指定。
+本集目录使用 `E01` 格式。整集入口生成 `声音记录.json`、`待核对.json`、人声段、声纹聚类与跨集候选。`diarize.enabled=false` 时不运行声纹与候选比对。已有声音和待核对记录在校验后备份，再写入新结果。
 
-Grok 使用 `/v1/stt`，默认模型为 `grok-voice-transcribe-2.0`，`--keyterm` 可重复传入角色卡姓名。豆包采用音频理解模型，返回时间与声线标签必须回听复核。
+声音核对状态为 `单路识别`、`待核对`、`人工确认`。截断、句长异常、词时间与人声不匹配、重叠、声纹待定和口型冲突触发回听。有人声但没有识别词的区间单独登记待核对，不生成虚构台词。字幕不参与切句和补识别。
 
-`asr_window.py` 支持秒数或 `MM:SS.s`，仅向标准输出打印窗口识别结果，不修改声音记录；返回时间仍相对于整集。省略 `--raw-dir` 时，原始响应默认保存在输入文件同目录的 `asr_raw/`。
-
-凭据通过 `s2s.config.get_environment()` 读取项目 `.env`。Grok 需要 `XAI_API_KEY`，豆包需要 `ARK_DOUBAO_API_KEY`，代理使用 `ARK_DOUBAO_PROXY`。
-
-实测状态和限制见 `docs/语音识别能力实测.md`。
-
-凭据经 `s2s.config.get_environment()` 读取。Grok 优先使用非空 `XAI_API_KEY`；未配置时调用 `pi auth print-bearer-token --provider xai`，复用 Pi 已登录凭据并由 Pi 刷新。令牌仅保存在进程内存，不写日志、文件或错误。豆包使用 `ARK_DOUBAO_API_KEY` 与 `ARK_DOUBAO_PROXY`。
-
-Grok 声线标签不能直接认定为人物身份；“清楚”不表示无重叠或漏句。真实效果和限制见 `docs/语音识别能力实测.md`。
+定向入口只输出 JSON 与保存原始响应，不改黑板；时间仍相对于整集。
 
 ### 字幕识别与声音对照
 
@@ -262,59 +234,46 @@ uv run python tools/dispatch_role.py 动作识别 --集 剧目/样本剧/E01 --�
 
 `--复核` 只调用默认识图配置，对存疑句附加复核，不覆盖代码判断。分数为启发式证据，未开口不直接等于心声，看不到也不证明人物不在画面。实际能力与限制见 `docs/口型检测实测.md`。
 
-### ASR 人名提示与字幕漏句回查
+### 单路重切与裁定迁移
 
 ```bash
-uv run python tools/asr.py videos/sample/E01.mp4 tmp/下一轮/E01 \
-  --provider grok --keyterm-from 剧目/样本剧/E01/字幕记录.json \
-  --recover-from 剧目/样本剧/E01/字幕记录.json
-
-uv run python tools/asr_window.py videos/sample/E01.mp4 00:49.3 00:51.8 \
-  --provider grok --keyterm-from 剧目/样本剧/E01/字幕记录.json \
-  --raw-dir tmp/下一轮/window/asr_raw
+uv run python tools/asr.py videos/sample/E01.mp4 剧目/示例/E01 \
+  --words 剧目/示例/E01/素材/asr_raw/local-原始响应.json \
+  --人声段 剧目/示例/E01/素材/人声段.json --原裁定 回听结果.json
 ```
 
-`--keyterm-from` 可重复指定角色卡或字幕记录，与已有 `--keyterm`、配置提示词合并去重。角色卡读取姓名及别名称呼；字幕读取反复出现的人名候选。候选仅用于提示服务，不修改角色卡或按字幕替换台词。
+`--words` 可重复传入多个 Qwen 窗口响应，窗口时间转换为本集时间；提供后不调用 ASR。省略 `--人声段` 会执行本地 VAD。切句参数默认为 `--min-pause 0.5`、`--max-sentence 6`。无真实词时间时报错，不从句级时间推造。
 
-整集工具在本集已有 `字幕记录.json` 时自动回查“只有字幕”的时间段，前后各扩 1 秒；`--recover-from` 指定其他字幕文件，`--no-recover` 关闭。过滤已有台词和窗口上下文；新增文本仅采用音频服务返回，标“听不清”，窗口声线不直接映射到整集人物。回查诊断保存在 `素材/asr_raw/recovery.json`；命令输出含回查、新增和失败窗口数量。服务没识别出的台词不会从字幕复制补齐。
+只有原文、起止和覆盖范围都未变化、且决定来源适用时，才沿用人工裁定；其余在 `素材/回听/裁定迁移.json` 保留待确认记录。旧双路选择不自动确认为单路结果。
 
-Grok 参数位于 `asr.backends.grok`：`format=false`、`pause_seconds=0.35`、`max_sentence_seconds=6.0`、`min_speaker_seconds=0.3`；可选 `vad_threshold` 为 0–1，整集未配置时保留服务默认值。短声线跳变合并标“听不清”；独立短应答保留声线。详情见 `docs/语音识别能力实测.md` 第 8 节。
+重切或人工改字、删句后，须重建受影响的口型、归属、剧本与对照表。派发器会隔离过期证据并显式报告，不替主控重写这些内容。
 
-### 本地语音识别
+### 本地语音识别环境
 
-`local` 后端支持 `paraformer-zh`、`paraformer-contextual`、`qwen3-asr-0.6b`，通过 `asr.backends.local.model` 切换。模型保存在 `models/asr/`，独立运行环境通过 `python_executable` 指定；`hotwords` 为姓名列表。
-
-```python
-from s2s.asr import get_backend
-sentences = get_backend("local").transcribe("videos/sample/E01.mp4", 10, 15)
-```
-
-时间相对整集，返回 `speaker` 为空，需由说话人分离补齐。当前声音记录导出中的统一声线标签仅为未知占位，不能认定为同一人物。Qwen 单次窗口最长 300 秒。Paraformer 原生时间版不支持热词，姓名提示需使用热词版。Whisper 的本地权重尚不完整，暂不可用。
-
-实测对比、依赖与模型摘要见 `docs/本地语音识别对比.md`。Grok 仍为默认；两路一致不替代独立验收。
-
-独立运行环境位于 `envs/local-asr/`（不入 git），复建：`uv venv --python 3.12 envs/local-asr && uv pip install --python envs/local-asr/bin/python 'funasr-onnx==0.4.3' 'mlx-audio==0.5.9' python-dotenv httpx rapidfuzz`。`python_executable` 须写虚拟环境内的解释器路径，不能写解析符号链接后的路径。
-
-### 双路识别与逐句回听
-
-在 `asr.cross_check` 配置 `enabled: true`、`primary` 和 `secondary`。两个后端名称须不同；本地具体模型由 `asr.backends.local.model` 指定。单路工具仍使用 `asr.provider`。
+Qwen 模型、强制对齐模型及 FSMN-VAD 放在 `models/asr/`。`asr.backends.local.python_executable` 指向隔离解释器，`model_path`、`aligner_path` 和 `vad_path` 可指定模型目录。环境复建：
 
 ```bash
-uv run python tools/asr_cross.py videos/sample/E01.mp4 剧目/样本剧/E01
-uv run python tools/asr_cross.py videos/sample/E01.mp4 剧目/样本剧/E01 \
-  --主路结果 a.json --副路结果 b.json
-uv run python tools/listen_sheet.py 剧目/样本剧/E01 tmp/E01回听.html
-uv run python tools/listen_sheet.py 剧目/样本剧/E01 tmp/E01全部回听.html --全部
-uv run python tools/apply_listen.py 剧目/样本剧/E01 回听结果.json
+uv venv --python 3.12 envs/local-asr
+uv pip install --python envs/local-asr/bin/python 'funasr-onnx==0.4.3' 'mlx-audio==0.5.9' python-dotenv httpx rapidfuzz
 ```
 
-传入结果文件会直接复用，缺少的那一路才调用识别后端。合并保留主路句子的文本、时间和声线；仅副路句子按时间插入。非一致句生成阻断级待回听问题。合并和应用均会备份已有声音记录及待核对，并在写回前后校验。
+解释器须保留虚拟环境内路径，不解析成系统解释器路径。依赖和历史对比见 `docs/本地语音识别对比.md`。
 
-回听页离线打开，音频位于本集 `素材/回听/`，页面使用相对路径。默认按优先级显示待处理句子；`--全部` 包含一致句和人工确认句。复制页面时保留所引用音频与代表帧的相对目录结构。
+### 逐句回听
 
-空格播放或暂停本句，C 播放上下文，1/2/3 采用主路/副路/字幕，J/K 切换句子，E 编辑，Esc 退出输入。选择文本或确认手改后计入进度；可调整听辨、备注或标记没有台词。浏览器不能存储进度时仍能操作，离开前导出。
+```bash
+uv run python tools/listen_sheet.py 剧目/示例/E01 剧目/示例/E01/回听.html
+uv run python tools/listen_sheet.py 剧目/示例/E01 tmp/全部回听.html --全部
+uv run python tools/apply_listen.py 剧目/示例/E01 回听结果.json
+```
 
-导出文件包含声音快照与已完成决定。应用会拒绝已过期的快照；部分应用后继续处理，应重新生成页面。删除导致句号变化时，主控按 `素材/回听/句号对照.json` 更新下游引用，删除项为 `null`。归属表、口型记录、剧本和对照表不由本工具自动改写。
+页面默认展示异常句、待确认裁定及疑似漏段音频；`--全部` 包含普通单路句和人工确认句。单路按钮为原文和参考字幕；人工操作才计入确认进度。漏段没有可选文本，须回听后定向识别或人工打点补录，再更新问题状态。
+
+空格播放本句，C 播放上下文，1/2 采用原文/字幕，J/K 切换句子，E 编辑，Esc 退出输入。每个按钮可用 Tab、Enter 或空格操作。音频前后补 0.2 秒，上下文覆盖前一句到后一句。复制页面须保留音频和代表帧的相对路径。
+
+导出包含声音快照与已完成决定；应用时核对句号、文本及起止摘要，声线等变化单独报告。删除后的句号映射写入 `素材/回听/句号对照.json`。未解决项继续保留，不能以单路识别状态替代人工确认。
+
+### 口型变体与复核
 
 口型工具支持 `--variant baseline|side|model|fused`，默认 baseline。side 用 YuNet 补充 MediaPipe 未覆盖的人脸；model 在补检轨迹上使用 Light-ASD 分，fused 融合规则分与模型分。E01 四版及完整存疑复核实测见 `docs/口型检测实测.md`。
 
@@ -326,51 +285,31 @@ uv run python tools/apply_listen.py 剧目/样本剧/E01 回听结果.json
 
 ASD 独立环境复建：`uv venv --python 3.12 envs/asd && uv pip install --python envs/asd/bin/python torch==2.14.1 numpy==2.5.4 scipy==1.18.1 python-speech-features==0.6 opencv-python-headless==5.0.0.93`（约 800MB）。
 
-### 约束声纹与跨集参考
+### 声纹、口型与跨集参考
 
-在模型配置顶层设置 `diarize.enabled: true` 后，`asr_cross.py` 合并两路再聚类声线，保存本集 `声纹聚类.json`。缺失或禁用时不运行声纹。constraints 可选 grok、lipsync、max_speakers；已知人数上限加1为目标类数，硬约束冲突时保留分离。口型与当前句文本、时间不匹配时不使用。待定句保留旧标签，必须配合结果侧表。
+`asr.py` 在切句后执行 CAM++ 聚类，再生成前三跨集候选；候选只用于核对身份。生产只使用 `lipsync` 约束，不从已有角色数量推导本集人数上限。旧 Grok 原始响应不参与生产声纹。
+
+口型须与当前句号、原文、起止完整匹配才参与聚类。先生成单路声音，再用口型工具产出本集 `口型记录.json`，随后复用 `--words` 和 `--人声段` 重切，即可使用有效口型约束并刷新候选。缺失或过期口型在 `输入可用性` 中说明。
 
 ```bash
-S2S_CONFIG=tmp/T3g/models.json uv run python tools/asr_cross.py \
-  videos/sample/E01.mp4 tmp/示例/E01 --主路结果 <主路.json> --副路结果 <副路.json>
 uv run python tools/voiceprint.py 入库 <本地剧目目录> E01 --音频 <E01.mp4>
 uv run python tools/voiceprint.py 比对 <本地剧目目录> E02 --音频 <E02.mp4>
 uv run python tools/voiceprint.py 评测 <声纹聚类.json> <标注.json> --声线角色映射 <映射.json>
+uv run python tools/diarize.py <视频> <声音记录.json> <新声纹聚类.json> --约束 lipsync --口型 <口型记录.json>
 ```
 
-入库须有确认的角色编号归属表，跳过非清楚音频；重复入库替换该集贡献。比对只输出前三候选，不确认人物，不修改归属表。未指定音频时从镜头表读取视频路径。
+入库须有确认的角色归属，清楚且非待核对的音频；重复入库替换该集贡献。比对排除待定、疑似混人/重叠及待核对句，不确认人物，不改归属表。候选保存当前声音摘要；原文、时间、句号或声线变化后须重新比对。
 
-独立 `tools/diarize.py` 新增 `--约束 grok lipsync max_speakers`、`--人数上限 6`、`--口型 <口型记录.json>`、`--Grok权重`、`--Grok纯度`、`--Grok最低相似度`、`--试听目录 <新目录>`。未指定约束时保留旧无约束聚类。原有 `--词级`、`--写回` 行为不变。
-
-声纹数据只在本机黑板保存，不附到提示词、日志或报告。实验与使用边界见 `docs/说话人分离实测.md` 第9节。
+声纹向量与各集均值只保存本机，不附到提示词、日志或报告。
 
 ### 派发与分段参数
 
 `dispatch_role.py` 支持 `--提示词 <文件>`，默认正式提示词。全文验收自动执行整集文本检查与分段画面核对；结果旁的 `.coverage.json` 保存逐段实际读帧覆盖，`全文审查完成=false` 时不得标记全文完成。`segments.py` 支持 `--shots-per-segment`、`--soft-limit`、`--frame-budget`、`--context-frame-budget`，默认分别为 6、8、36、48。
 
-### 按音频统一切句与回听
+### 旧数据兼容
 
-交叉核对使用本地 FSMN-VAD、短时能量及两路词级时间建立共享句界。字幕只在人工回听页作为参考展示。切句参数为 `asr.segmentation.min_pause=0.5`、`max_sentence=6`，可用同名命令行参数覆盖。
-
-```bash
-uv run python tools/asr_cross.py videos/sample/E01.mp4 tmp/新一轮/E01 \
-  --主路词 主路原始响应.json --副路词 副路原始响应.json \
-  --人声段 已有人声段.json
-```
-
-两份词级响应均提供时不调用识别后端；未提供人声段时执行本地检测。复用句级文件时，仍须同时提供 `--主路词`、`--副路词`；缺少原始词时间即报错，不通过重新识别补齐。新识别的本地后端将词级响应保存在 `素材/asr_raw/local-*.json`。
-
-`asr.py --recover-from` 接受人声段，不接受字幕；`--secondary-words` 提供已有副路词级响应后，才允许对人声中两路均无词的区间补识别。`--keyterm-from` 只接受角色卡。补识别会调用所选后端，不用于禁止新识别的离线重切任务。
-
-声音记录及人工裁定迁移完成后生成回听页：
-
-```bash
-uv run python tools/listen_sheet.py tmp/新一轮/E01 tmp/新一轮/E01/回听.html
-uv run python tools/apply_listen.py tmp/新一轮/E01 回听结果.json
-```
-
-本句音频前后各补 0.2 秒，“带上下文”覆盖前一句开头至后一句结尾。原裁定发生拆句、合句、变界时在页上显示待确认。应用回听结果只校验句号、文本及起止摘要；声线等后续字段变化不会使页面失效，变化在命令输出中列出。
+`asr_cross.py` 命令直接报停用，不读取素材或启动服务。历史后端代码、试验数据和双路 Schema 读取仍保留，供旧报告复核。生产识别和派发不调用历史后端，不把旧“两路一致”转换为新人工确认。
 
 ### 角色卡派发资料
 
-角色卡建立可使用 `dispatch_role.py 角色卡 --模式 建立`。资料装配包含声音、字幕、人物投影、帧、句级与轨迹级口型证据、声纹聚类，以及存在时的声纹候选；不附加逐帧口型曲线或声纹库原始向量。缺少声纹候选表示本次没有该项证据，不视为已完成跨集比对。`--提示词 <文件>` 用于提示词对比，模型沿用配置默认。
+角色卡建立可使用 `dispatch_role.py 角色卡 --模式 建立`。资料装配包含声音、字幕、人物投影、帧、句级与轨迹级口型证据、声纹聚类，以及存在时的声纹候选；不附加逐帧口型曲线或声纹库原始向量。`证据状态` 逐项报告口型、声纹聚类和跨集候选的有效、缺失或过期状态；过期证据不附入授权资料。缺失不构成否定事实。`--提示词 <文件>` 用于提示词对比，模型沿用配置默认。

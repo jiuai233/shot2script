@@ -53,8 +53,15 @@ def load_config() -> dict:
 def get_asr_backend(name: str | None = None) -> dict:
     asr = load_config()["asr"]
     provider = name or asr.get("provider")
+    if provider != "local":
+        raise ConfigError(f"未配置生产 ASR 后端：{provider}；只允许本地 Qwen3-ASR")
+    if asr.get("cross_check", {}).get("enabled"):
+        raise ConfigError("生产不允许双路 ASR 配置")
     try:
-        return {**deepcopy(asr["backends"][provider]), "provider": provider}
+        settings = {**deepcopy(asr["backends"][provider]), "provider": provider}
+        if settings.get("model") != "qwen3-asr-0.6b":
+            raise ConfigError("生产 ASR 只允许 qwen3-asr-0.6b")
+        return settings
     except KeyError as exc:
         raise ConfigError(f"未配置 ASR 后端：{provider}") from exc
 

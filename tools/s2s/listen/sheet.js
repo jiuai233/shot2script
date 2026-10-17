@@ -1,12 +1,12 @@
 /* 纯数据逻辑同时供浏览器和 Node 测试使用。 */
 (function (root) {
   "use strict";
-  const choices = ["主路", "副路", "字幕", "手改", "删除"];
+  const choices = ["原文", "主路", "副路", "字幕", "手改", "删除"];
   function valid(item, value) {
     return value && value.句号 === item.句号 && choices.includes(value.决定) &&
       typeof value.最终文本 === "string" && (value.决定 === "删除" || value.最终文本.trim()) &&
       ["清楚", "重叠", "听不清"].includes(value.听辨) && typeof value.备注 === "string" &&
-      (!["主路", "副路", "字幕"].includes(value.决定) || (item[value.决定] && value.最终文本 === item[value.决定]));
+      (!["原文", "主路", "副路", "字幕"].includes(value.决定) || (item[value.决定] && value.最终文本 === item[value.决定]));
   }
   function summary(snapshot) {
     return snapshot.map(({id, 文本, 起, 止}) => ({id, 文本, 起, 止}));
@@ -65,7 +65,7 @@
   }
   function save(index, choice) {
     const card = articles[index], item = data.items[index];
-    if (["主路", "副路", "字幕"].includes(choice)) {
+    if (["原文", "主路", "副路", "字幕"].includes(choice)) {
       if (!item[choice]) return;
       field(card, "text").value = item[choice];
     }
@@ -140,7 +140,11 @@
     if (key === " " && event.target.closest("button,a,audio,summary")) return;
     event.preventDefault();
     if (key === " " || key === "c") play(active, key === "c" ? "context" : "sentence");
-    if (["1", "2", "3"].includes(key)) save(active, ["主路", "副路", "字幕"][Number(key) - 1]);
+    if (["1", "2", "3"].includes(key)) {
+      const names = Object.hasOwn(data.items[active], "原文") ? ["原文", "字幕"] : ["主路", "副路", "字幕"];
+      const choice = names[Number(key) - 1];
+      if (choice) save(active, choice);
+    }
     if (key === "j" || key === "k") focusCard(active + (key === "j" ? 1 : -1), true);
     if (key === "e") field(articles[active], "text").focus();
   });

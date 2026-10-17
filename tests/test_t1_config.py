@@ -25,7 +25,7 @@ def custom_config(tmp_path, monkeypatch):
 
 def test_defaults():
     assert config.get_asr_backend()["provider"] == "local"
-    assert config.get_asr_backend("doubao")["proxy_env"] == "ARK_DOUBAO_PROXY"
+    assert config.get_asr_backend()["model"] == "qwen3-asr-0.6b"
     assert config.get_vision()["model"] == "opencode-go/deepseek-v4.1-flash"
     assert config.get_agent("角色卡")["thinking"] == "high"
     assert config.get_agent("动作识别") == config.get_vision()
@@ -34,7 +34,7 @@ def test_defaults():
 
 
 @pytest.mark.parametrize("variable,value,reader,field", [
-    ("S2S_ASR_PROVIDER", "doubao", config.get_asr_backend, "provider"),
+    ("S2S_ASR_PROVIDER", "local", config.get_asr_backend, "provider"),
     ("S2S_VISION_MODEL", "opencode-go/deepseek-v4.1-flash", config.get_vision, "model"),
     ("S2S_VISION_RUNNER", "opencode", config.get_vision, "runner"),
     ("S2S_AGENT_MODEL", "opencode-go/deepseek-v4.1-flash", lambda: config.get_agent("角色卡"), "model"),

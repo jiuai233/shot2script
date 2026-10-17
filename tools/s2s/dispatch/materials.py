@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from s2s.config import PROJECT_ROOT
+from s2s.evidence import evidence_problem
 from s2s.validate import time_seconds, validate_file
 
 PROMPTS = {'全剧主控': '01-全剧主控.md', '单集主控': '02-单集主控.md',
@@ -133,19 +134,31 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
                      '声音记录': read('声音记录.json'), '字幕记录': read('字幕记录.json')})
         if role == '角色卡':
             data['临时人物'] = read('临时人物.json', optional=True)
-            if (episode / '口型记录.json').is_file():
-                lipsync = read('口型记录.json')
-                # 逐帧测量曲线体积很大，身份核对使用句级结论、检测框及冲突证据。
-                data['口型记录'] = {
-                    '句': [{**{k: v for k, v in row.items() if k != '轨迹'},
-                            '轨迹': [{k: v for k, v in track.items()
-                                      if k not in ('曲线', '模型曲线')}
-                                     for track in row.get('轨迹', [])]}
-                           for row in lipsync.get('句', [])],
-                    '声线配对': lipsync.get('声线配对', [])}
-            for name in ('声纹聚类', '声纹候选'):
-                if (episode / (name + '.json')).is_file():
-                    data[name] = read(name + '.json')
+            data['证据状态'] = {}
+            for name in ('口型记录', '声纹聚类', '声纹候选'):
+                path = episode / (name + '.json')
+                if not path.is_file():
+                    data['证据状态'][name] = {'状态': '缺失', '说明': '本次没有该项证据，不能据此作否定判断'}
+                    continue
+                value = read(name + '.json')
+                problem = evidence_problem(name, value, data['声音记录'])
+                if problem:
+                    data['证据状态'][name] = {'状态': '过期', '说明': problem}
+                    continue
+                data['证据状态'][name] = {'状态': '有效'}
+                if name == '口型记录':
+                    current = {row['id']: row['声线'] for row in data['声音记录']}
+                    if any(row.get('声线') != current[row['句']] for row in value['句']):
+                        from s2s.lipsync.core import pair_voices
+                        rows = [{**row, '声线': current[row['句']]} for row in value['句']]
+                        value = {**value, '句': rows, '声线配对': pair_voices(rows)}
+                    value = {
+                        '句': [{**{k: v for k, v in row.items() if k != '轨迹'},
+                                '轨迹': [{k: v for k, v in track.items() if k not in ('曲线', '模型曲线')}
+                                         for track in row.get('轨迹', [])]}
+                               for row in value['句']],
+                        '声线配对': value.get('声线配对', [])}
+                data[name] = value
             # 片段原始响应保留口型；合并动作记录本身没有口型字段。
             people = []
             for path in sorted((episode / '派发结果' / '动作识别').glob('*.json')):

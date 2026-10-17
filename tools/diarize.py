@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 from s2s.diarize.embeddings import MODEL_DIR, MODEL_FILES
-from s2s.diarize.pipeline import load_words, run, write_back
+from s2s.diarize.pipeline import run, write_back
 
 
 def main(argv=None):
@@ -23,13 +23,8 @@ def main(argv=None):
     parser.add_argument("--分窗秒", type=float, default=3.0)
     parser.add_argument("--线程", type=int, default=2)
     parser.add_argument("--模型目录", type=Path, default=MODEL_DIR)
-    parser.add_argument("--词级", type=Path, action="append", default=[], help="Grok 原始响应，可重复指定")
-    parser.add_argument("--约束", nargs="*", choices=["grok", "lipsync", "max_speakers"], default=None)
+    parser.add_argument("--约束", nargs="*", choices=["lipsync"], default=["lipsync"])
     parser.add_argument("--口型", type=Path)
-    parser.add_argument("--人数上限", type=int)
-    parser.add_argument("--Grok权重", type=float, default=0.15)
-    parser.add_argument("--Grok纯度", type=float, default=0.7)
-    parser.add_argument("--Grok最低相似度", type=float, default=0.2)
     parser.add_argument("--试听目录", type=Path)
     parser.add_argument("--写回", type=Path)
     args = parser.parse_args(argv)
@@ -43,13 +38,11 @@ def main(argv=None):
             raise ValueError("写回目标与声音记录不一致")
         constraints = None
         if args.约束 is not None:
-            constraints = {"constraints": args.约束, "max_speakers": args.人数上限,
-                           "grok_weight": args.Grok权重, "grok_purity": args.Grok纯度,
-                           "grok_min_similarity": args.Grok最低相似度}
+            constraints = {"constraints": args.约束}
         lipsync = json.loads(args.口型.read_text()) if args.口型 else None
         result = run(args.视频, records, model=args.模型, denoise=args.去配乐,
                      threshold=args.阈值, overlap_threshold=args.重叠阈值,
-                     window_seconds=args.分窗秒, words=load_words(args.词级),
+                     window_seconds=args.分窗秒, words=(),
                      model_dir=args.模型目录, threads=args.线程, constraints=constraints, lipsync=lipsync)
         if args.试听目录:
             from s2s.diarize.integration import export_representatives

@@ -289,32 +289,22 @@ def load_cli(name):
     return module
 
 
-def test_cli_success_and_no_overwrite(monkeypatch,tmp_path,capsys):
-    module=load_cli("asr")
-    b=backend("grok",tmp_path)
-    import numpy as np
-    b.last_words = [{"text":"你好。","start":1,"end":2}]
-    monkeypatch.setattr(module,"detect",lambda *args: [])
-    monkeypatch.setattr(module,"waveform",lambda *args: np.zeros(48000))
-    monkeypatch.setattr(b,"transcribe",lambda _: [sentence(1,2,"你好。")])
-    monkeypatch.setattr(module,"get_backend",lambda _:b)
-    fake_audio(monkeypatch,tmp_path)
-    target=tmp_path/"E01"
-    assert module.main(["source.mp4",str(target),"--provider","grok"]) == 0
-    result=json.loads((target/"声音记录.json").read_text())
-    assert result[0]["id"] == "E01-S001"
-    assert b.settings["raw_dir"] == str(target/"素材/asr_raw")
-    with pytest.raises(SystemExit):
-        module.main(["source.mp4",str(target)])
-    assert json.loads((target/"声音记录.json").read_text()) == result
+def test_cli_forwards_single_route_arguments(monkeypatch, tmp_path, capsys):
+    module = load_cli("asr")
+    calls = []
+    monkeypatch.setattr(module, "run", lambda *args, **kwargs: calls.append((args, kwargs)) or {"句数": 1})
+    assert module.main(["source.mp4", str(tmp_path / "E01"), "--provider", "local", "--words", "raw.json"]) == 0
+    assert calls[0][1]["word_paths"] == [Path("raw.json")]
+    assert json.loads(capsys.readouterr().out)["句数"] == 1
 
 
-def test_cli_failed_episode_does_not_write_empty_record(monkeypatch,tmp_path):
-    module=load_cli("asr")
-    monkeypatch.setattr(module,"get_backend",lambda _:backend("grok",tmp_path))
-    fake_audio(monkeypatch,tmp_path)
-    assert module.main(["source.mp4",str(tmp_path/"E01")]) == 1
-    assert not (tmp_path/"E01/声音记录.json").exists()
+def test_cli_failed_episode_does_not_write_empty_record(monkeypatch, tmp_path):
+    module = load_cli("asr")
+    def fail(*args, **kwargs):
+        raise ValueError("真实词时间缺失")
+    monkeypatch.setattr(module, "run", fail)
+    assert module.main(["source.mp4", str(tmp_path / "E01")]) == 1
+    assert not (tmp_path / "E01/声音记录.json").exists()
 
 
 def test_window_cli_json_no_record_write(monkeypatch,tmp_path,capsys):
@@ -417,20 +407,12 @@ def test_cross_chunk_residual_sentence_joined():
 
 
 @pytest.mark.parametrize("name", ["asr", "asr_window"])
-def test_cli_passes_keyterms(monkeypatch, tmp_path, name, capsys):
+def test_cli_refuses_removed_remote_keyterms(tmp_path, name):
     module = load_cli(name)
-    b = backend("grok", tmp_path)
-    monkeypatch.setattr(b, "transcribe", lambda *args: [])
-    monkeypatch.setattr(module, "get_backend", lambda _: b)
-    fake_audio(monkeypatch, tmp_path)
-    if name == "asr":
-        import numpy as np
-        b.last_words = []
-        monkeypatch.setattr(module,"detect",lambda *args: [])
-        monkeypatch.setattr(module,"waveform",lambda *args: np.zeros(48000))
     args = ["source.mp4", str(tmp_path / "E01")] if name == "asr" else ["source.mp4", "0", "1"]
-    assert module.main(args + ["--keyterm", "林舟", "--keyterm", "沈宁"]) == 0
-    assert b.settings["keyterms"] == ["林舟", "沈宁"]
+    with pytest.raises(SystemExit) as exc:
+        module.main(args + ["--keyterm", "林舟"])
+    assert exc.value.code == 2
 
 
 def test_audio_subprocess_timeout_is_bounded(monkeypatch, tmp_path):

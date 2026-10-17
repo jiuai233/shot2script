@@ -74,8 +74,7 @@
         "参数",
         "冲突",
         "cannot-link",
-        "must-link数",
-        "Grok覆盖句数"
+        "must-link数"
       ],
       "additionalProperties": false
     },
@@ -99,12 +98,16 @@
               "type": "null"
             }
           ]
+        },
+        "口型问题": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
-        "Grok词数",
-        "口型记录",
-        "人数上限"
+        "口型记录"
       ],
       "additionalProperties": false
     },

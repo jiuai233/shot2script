@@ -9,6 +9,7 @@ import re
 import numpy as np
 
 from s2s.config import PROJECT_ROOT
+from s2s.evidence import sound_snapshot
 from s2s.diarize.embeddings import Embedder, MODEL_FILES, decode_audio, window_embedding, unit, SAMPLE_RATE
 from s2s.diarize.pipeline import validate_records
 from s2s.timefmt import to_sec
@@ -102,7 +103,7 @@ def enroll(drama, episode, source=None, model="campp", *, extracted=None):
     skipped = []
     for row, vector in zip(records, vectors):
         owner = lookup.get(row["id"], {})
-        if not re.fullmatch(r"C\d{3,}", owner.get("说话人", "")) or owner.get("确定度") != "确认" or vector is None or row.get("听辨") != "清楚":
+        if not re.fullmatch(r"C\d{3,}", owner.get("说话人", "")) or owner.get("确定度") != "确认" or vector is None or row.get("听辨") != "清楚" or row.get("核对", {}).get("状态") == "待核对":
             skipped.append(row["id"])
             continue
         by_role[owner["说话人"]].append(vector)
@@ -134,7 +135,7 @@ def enroll(drama, episode, source=None, model="campp", *, extracted=None):
             "跳过句": skipped, "声纹目录": str(library)}
 
 
-def compare(drama, episode, source=None, model="campp", *, extracted=None):
+def compare(drama, episode, source=None, model="campp", *, extracted=None, clustering=None, persist=True):
     directory = episode_path(drama, episode)
     records, vectors, info = extracted if extracted is not None else extract(directory, source, model)
     checked_vectors(records, vectors)
@@ -152,19 +153,20 @@ def compare(drama, episode, source=None, model="campp", *, extracted=None):
             library.append((role["角色"], center))
     excluded = set()
     result_path = directory / "声纹聚类.json"
-    if result_path.exists():
-        result = read(result_path)
+    if clustering is not None or result_path.exists():
+        result = clustering if clustering is not None else read(result_path)
         if [r["句"] for r in result["句列表"]] != [r["id"] for r in records]:
             raise ValueError("声纹聚类句号已过期，须重新运行聚类")
         for pred, row in zip(result["句列表"], records):
             if any(pred.get(k) != row.get(k) for k in ("起", "止", "文本")) or (not pred["待定"] and pred["声线"] != row["声线"]):
                 raise ValueError("声纹聚类输入已变化，须重新运行聚类")
-        excluded = {r["句"] for r in result["句列表"] if r["待定"]}
+        excluded = {r["句"] for r in result["句列表"] if r["待定"] or r.get("疑似重叠")}
     groups = defaultdict(list)
     for row, vector in zip(records, vectors):
-        if vector is not None and row["id"] not in excluded:
+        check = row.get("核对", {})
+        if vector is not None and row["id"] not in excluded and row.get("听辨") == "清楚" and check.get("状态") != "待核对":
             groups[row["声线"]].append(vector)
-    output = {"集": directory.name, **info, "仅供参考": True, "声线": []}
+    output = {"集": directory.name, **info, "仅供参考": True, "声音摘要": sound_snapshot(records), "声线": []}
     for label in dict.fromkeys(row["声线"] for row in records):
         rows = groups.get(label, [])
         center = unit(np.mean(rows, axis=0)) if rows else None
@@ -176,5 +178,6 @@ def compare(drama, episode, source=None, model="campp", *, extracted=None):
                 candidates.append({"角色": role, "相似度": round(float(np.clip(center @ vector, -1, 1)), 6)})
             candidates.sort(key=lambda r: (-r["相似度"], r["角色"]))
         output["声线"].append({"声线": label, "句数": len(rows), "候选": candidates[:3]})
-    save(directory / "声纹候选.json", output)
+    if persist:
+        save(directory / "声纹候选.json", output)
     return output

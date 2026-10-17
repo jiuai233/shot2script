@@ -4,6 +4,7 @@ import pytest
 
 from test_t8_dispatch import board, action_result, save
 from s2s.dispatch.materials import MATERIALS, assemble
+from s2s.evidence import sound_snapshot
 
 
 def authorized_data(package):
@@ -12,11 +13,13 @@ def authorized_data(package):
 
 def test_role_card_includes_voice_evidence_not_library(board, action_result):
     save(board / '派发结果/动作识别/E01-P01.json', action_result)
+    sounds = json.loads((board / '声音记录.json').read_text())
+    stamp = {k: sounds[0][k] for k in ('起', '止', '文本', '声线')}
     evidence = {
-        '口型记录': {'句': [{'句': 'E01-S001', '结论': '存疑', '复核': None, '轨迹': []}], '声线配对': []},
-        '声纹聚类': {'句列表': [{'句': 'E01-S001', '待定': True, '合并依据': ['max_speakers']}],
+        '口型记录': {'句': [{'句': 'E01-S001', **stamp, '结论': '存疑', '复核': None, '轨迹': []}], '声线配对': []},
+        '声纹聚类': {'句列表': [{'句': 'E01-S001', **stamp, '待定': True, '合并依据': ['max_speakers']}],
                  '约束': {'冲突': ['聚类冲突哨兵']}},
-        '声纹候选': {'仅供参考': True, '声线': [{'标签': 'E01-V1', '候选': [{'角色': 'C003', '余弦相似度': 0.9}]}]},
+        '声纹候选': {'声音摘要': sound_snapshot(sounds), '仅供参考': True, '声线': [{'标签': 'E01-V1', '候选': [{'角色': 'C003', '余弦相似度': 0.9}]}]},
     }
     for name, value in evidence.items():
         save(board / (name + '.json'), value)
@@ -41,7 +44,7 @@ def test_lipsync_projection_preserves_conflicts_without_curves(board, action_res
              '评分依据': {'评分冲突': True}, '不可用原因': ['遮挡'],
              '依据帧': ['K001_01.jpg'], '曲线': [{'音量': 0.01}],
              '模型曲线': [{'说话概率': 0.9}]}
-    row = {'句': 'E01-S001', '起': '00:00.1', '止': '00:00.9', '文本': '对白',
+    row = {'句': 'E01-S001', '声线': 'E01-V1', '起': '00:00.1', '止': '00:00.9', '文本': '对白隔离哨兵',
            '结论': '存疑', '轨迹': [track], '复核': {'画面结论': '画内', '与代码一致': False}}
     pairs = [{'声线': 'E01-V1', '轨迹组': 'G1', '支持句数': 1, '反例句数': 1}]
     save(board / '口型记录.json', {'句': [row], '声线配对': pairs, '统计': {'耗时秒': 5}})

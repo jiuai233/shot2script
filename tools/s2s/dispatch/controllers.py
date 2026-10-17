@@ -25,6 +25,10 @@ EPISODE_TOOLS = '''
 - tools/coverage.py <本集目录>
 - tools/lint_script.py <工作稿.md>
 - tools/dense_frames.py <视频> <起> <止> <帧率> <输出目录>
+- tools/asr.py <视频> <本集目录> [--words <Qwen原始词响应> --人声段 <人声段.json>]
+  唯一本地 Qwen 单路；产出声音、声纹聚类、声纹候选和异常回听清单，不按字幕自动改词。已有结果重切前先读取并备份；重切后重建口型及下游归属。
+- tools/listen_sheet.py <本集目录> <回听.html>
+- tools/apply_listen.py <本集目录> <回听结果.json>
 - tools/asr_window.py <视频> <起> <止>
 - tools/run_episode.py <剧名> <集号> --完成步骤 <1到9>
   每步完成并把结果写入黑板后运行这条命令；不会启动新模型。状态.json 的“步骤”为1到9的字符串键与布尔值。

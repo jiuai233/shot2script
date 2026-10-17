@@ -1,4 +1,4 @@
-"""交叉核对的声纹步骤与试听导出。"""
+"""单路声纹步骤与试听导出；旧 Grok 响应读取仅供历史实验。"""
 
 import json
 from pathlib import Path
@@ -39,22 +39,32 @@ def apply_labels(sounds, result):
             for old, new in zip(sounds, result["句列表"])]
 
 
-def analyze_board(video, sounds, episode_dir, settings, raw_dirs=()):
+def analyze_board(video, sounds, episode_dir, settings, raw_dirs=(), *, vectors_out=None):
+    from s2s.evidence import evidence_problem
     episode_dir = Path(episode_dir)
-    constraints = {k: settings[k] for k in ("constraints", "grok_weight", "grok_purity", "grok_min_similarity", "max_speakers") if k in settings}
-    roles_path = episode_dir.parent / "角色卡.json"
-    if constraints.get("max_speakers") is None and roles_path.exists():
-        roles = json.loads(roles_path.read_text())
-        if roles:
-            constraints["max_speakers"] = len({r["id"] for r in roles})
+    enabled = settings.get("constraints", ["lipsync"])
+    if set(enabled) - {"lipsync"} or settings.get("max_speakers") is not None:
+        raise ValueError("生产声纹只允许 lipsync 约束，不使用 Grok 或人数上限")
+    constraints = {"constraints": enabled}
     lips_path = episode_dir / "口型记录.json"
     lips = json.loads(lips_path.read_text()) if lips_path.exists() else None
-    words = discover_words([episode_dir / "素材/asr_raw", *raw_dirs])
+    problem = evidence_problem("口型记录", lips, sounds) if lips is not None else "缺失"
+    if problem:
+        lips = None
     result = run(video, sounds, model=settings.get("model", "campp"),
                  threshold=settings.get("threshold", 0.6), constraints=constraints,
-                 lipsync=lips, words=words, threads=settings.get("threads", 2))
-    result["输入可用性"] = {"Grok词数": len(words), "口型记录": lips is not None,
-                           "人数上限": constraints.get("max_speakers")}
+                 lipsync=lips, words=(), threads=settings.get("threads", 2), vectors_out=vectors_out)
+    metadata = result.get("约束")
+    if metadata is not None:
+        metadata["参数"] = {"constraints": enabled}
+        metadata.pop("Grok覆盖句数", None)
+        for row in lips.get("句", []) if lips else []:
+            active = {track.get("轨迹组") for track in row.get("轨迹", [])
+                      if track.get("状态") == "开口" and track.get("轨迹组")}
+            conflict = any(track.get("评分依据", {}).get("评分冲突") for track in row.get("轨迹", []))
+            if row.get("结论") == "存疑" or len(active) > 1 or conflict:
+                metadata["冲突"].append({"类型": "口型冲突或存疑", "句": [row["句"]]})
+    result["输入可用性"] = {"口型记录": lips is not None, "口型问题": problem}
     return apply_labels(sounds, result), result
 
 

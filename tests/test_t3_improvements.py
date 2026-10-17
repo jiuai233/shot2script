@@ -4,9 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from s2s.asr.base import Sentence
 from s2s.asr.grok import GrokBackend, keyterms_from, request_fields
-from s2s.asr.postprocess import records, seconds, words_to_sentences
+from s2s.asr.postprocess import seconds, words_to_sentences
 
 
 def cli(name='asr'):
@@ -122,132 +121,18 @@ def test_invalid_keyterm_source(tmp_path, value):
 
 
 @pytest.mark.parametrize('name', ['asr', 'asr_window'])
-def test_cli_keyterm_from_merge_and_deduplicate(tmp_path, monkeypatch, name):
+def test_cli_rejects_remote_keyterm_sources(tmp_path, name):
     module = cli(name)
-    source = write_json(tmp_path, [dict(名称='桂芝', 名称类型='姓名', 别名称呼=['桂阿姨'])])
-    class Backend:
-        provider = 'grok'
-        settings = {'keyterms': ['已有姓名']}
-        def transcribe(self, *args):
-            return []
-    backend = Backend()
-    monkeypatch.setattr(module, 'get_backend', lambda _: backend)
-    if name == 'asr':
-        import numpy as np
-        monkeypatch.setattr(module.audio, 'extract_audio', lambda *args: Path('audio.wav'))
-        monkeypatch.setattr(module, 'detect', lambda *args: [])
-        monkeypatch.setattr(module, 'waveform', lambda *args: np.zeros(32000))
-        backend.last_words=[]
-        args = ['video.mp4', str(tmp_path / 'E01')]
-    else:
-        args = ['video.mp4', '0', '1']
-    assert module.main(args + ['--keyterm', '桂芝', '--keyterm-from', str(source)]) == 0
-    assert backend.settings['keyterms'] == ['已有姓名', '桂芝', '桂阿姨']
+    args = ['video.mp4', str(tmp_path / 'E01')] if name == 'asr' else ['video.mp4', '0', '1']
+    with pytest.raises(SystemExit):
+        module.main(args + ['--keyterm-from', '角色卡.json'])
 
 
 def subtitle(text='桂芝人呢', start='00:05.0', end='00:05.8', **extra):
     return dict(文字=text, 起=start, 止=end, 类型='台词字幕', **extra)
 
 
-class RecoveryBackend:
-    provider = 'grok'
-    def __init__(self, response):
-        self.settings = {}
-        self.calls = []
-        self.response = response
-    def transcribe(self, path, start, end):
-        self.calls.append((start, end, self.settings.get('vad_threshold')))
-        self.last_words = self.response
-        return []
-
-
-def test_recovery_only_audio_text_and_speaker_isolation(monkeypatch):
-    module = cli()
-    monkeypatch.setattr(module.audio, 'duration', lambda _: 10)
-    backend = RecoveryBackend([word('慧芝，人呢？', 5, 5.8)])
-    previous = [word('你好。', 1, 2)]
-    rows, checks = module.recover_missing(backend, 'audio.wav', previous,
-                                        [{'起':5,'止':5.8}], 1, secondary=[])
-    assert backend.calls == [(4, 6.8, 0)]
-    assert rows[-1]['text'] == '慧芝，人呢？'
-    assert rows[-1]['speaker'] != previous[0]['speaker']
-    assert checks[0]['新增'][0]['text'] == '慧芝，人呢？'
-    assert backend.settings == {} and len(previous) == 1
-
-
-def test_recovery_existing_long_sentence_not_reinserted(monkeypatch):
-    module = cli()
-    monkeypatch.setattr(module.audio, 'duration', lambda _: 10)
-    backend = RecoveryBackend([])
-    sounds = [word('第一句第二句第三句第四句第五句。',1,8)]
-    rows, checks = module.recover_missing(backend, 'audio.wav', sounds,
-                                        [{'起':2,'止':6}], 1, secondary=[])
-    assert rows == sounds and not backend.calls and not checks
-
-
-def test_recovery_rejects_context_and_restores_vad(monkeypatch):
-    module = cli()
-    monkeypatch.setattr(module.audio, 'duration', lambda _: 10)
-    backend = RecoveryBackend([word('幼儿园门口。',6,6.5)])
-    backend.settings['vad_threshold'] = .2
-    previous = [word('幼儿园门口。',6,6.5)]
-    rows, checks = module.recover_missing(backend, 'audio.wav', previous,
-                                        [{'起':5,'止':5.8}], 1, secondary=[])
-    assert rows == previous and not checks[0]['新增']
-    assert backend.settings['vad_threshold'] == .2
-
-
-def test_recovery_failure_does_not_discard_full_transcript(monkeypatch):
-    from s2s.asr.common import ASRError
-    module = cli()
-    monkeypatch.setattr(module.audio, 'duration', lambda _: 10)
-    backend = RecoveryBackend([])
-    def fail(*args):
-        raise ASRError('grok HTTP 503；请检查 asr_raw')
-    backend.transcribe = fail
-    previous = [word('你好。',1,2)]
-    rows, checks = module.recover_missing(backend, 'audio.wav', previous,
-                                        [{'起':5,'止':5.8}], 1, secondary=[])
-    assert rows == previous and '503' in checks[0]['错误'] and backend.settings == {}
-
-
-def test_recovery_rejects_subtitles(monkeypatch):
-    module = cli()
-    monkeypatch.setattr(module.audio, 'duration', lambda _: 10)
-    backend = RecoveryBackend([])
-    with pytest.raises(ValueError, match='字幕'):
-        module.recover_missing(backend, 'audio.wav', [], [subtitle()], 1, secondary=[])
-    assert not backend.calls
-
-
 def test_erzi_is_not_an_er_suffix():
     rows = words_to_sentences([word('我的话', 0, 1), word('儿子呢？', 2, 2.2, 1)], 0, 3, 'c')
     assert [s.text for s in rows] == ['我的话', '儿子呢？']
     assert rows[0].speaker != rows[1].speaker
-
-
-def test_cli_automatic_recovery_saves_diagnostics(tmp_path, monkeypatch):
-    import numpy as np
-    module = cli()
-    dest = tmp_path / 'E01'
-    dest.mkdir()
-    (dest / '字幕记录.json').write_text('这不是有效字幕；自动流程不得读取')
-    backend = RecoveryBackend([word('慧芝，人呢？',5,5.8)])
-    calls = []
-    def transcribe(path, start=None, end=None):
-        calls.append((start,end))
-        backend.last_words = [word('你好。',1,2)] if start is None else backend.response
-        return []
-    backend.transcribe = transcribe
-    secondary = write_json(tmp_path, {'words':[]})
-    monkeypatch.setattr(module,'get_backend',lambda _:backend)
-    monkeypatch.setattr(module.audio,'duration',lambda _:10)
-    monkeypatch.setattr(module.audio,'extract_audio',lambda *args:Path('audio.wav'))
-    monkeypatch.setattr(module,'detect',lambda *args:[{'起':1,'止':2},{'起':5,'止':5.8}])
-    monkeypatch.setattr(module,'waveform',lambda *args:np.zeros(160000))
-    assert module.main(['video.mp4',str(dest),'--secondary-words',str(secondary)]) == 0
-    assert calls == [(None,None),(4,6.8)]
-    rows = json.loads((dest / '声音记录.json').read_text())
-    assert rows[-1]['文本'] == '慧芝，人呢？' and rows[-1]['听辨'] == '听不清'
-    checks = json.loads((dest / '素材/asr_raw/recovery.json').read_text())
-    assert len(checks[0]['新增']) == 1

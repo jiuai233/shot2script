@@ -52,12 +52,9 @@ def test_agent_vision_role_limit(mocked_runner):
 
 
 @pytest.mark.parametrize("name", ["grok", "doubao"])
-def test_asr_missing_key(name, mocked_runner):
-    backend = get_backend(name)
-    assert isinstance(backend, BACKENDS[name])
-    assert backend.settings["provider"] == name
-    with pytest.raises(ASRError, match="缺少"):
-        backend.transcribe("audio.wav", start=1, end=2)
+def test_asr_remote_provider_rejected(name, mocked_runner):
+    with pytest.raises(config.ConfigError, match="只允许本地"):
+        get_backend(name)
 
 
 def test_asr_default_and_sentence(mocked_runner):

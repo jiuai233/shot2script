@@ -66,6 +66,37 @@
         ],
         "additionalProperties": false
       }
+    },
+    "声音摘要": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "起": {
+            "type": "string"
+          },
+          "止": {
+            "type": "string"
+          },
+          "文本": {
+            "type": "string"
+          },
+          "声线": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "起",
+          "止",
+          "文本",
+          "声线"
+        ],
+        "additionalProperties": false
+      }
     }
   },
   "required": [

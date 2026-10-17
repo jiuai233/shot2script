@@ -40,7 +40,9 @@
               "不一致",
               "仅主路",
               "仅副路",
-              "人工确认"
+              "人工确认",
+              "单路识别",
+              "待核对"
             ]
           },
           "主路": {
@@ -65,17 +67,79 @@
               "主路",
               "副路",
               "字幕",
-              "手改"
+              "手改",
+              "原文"
             ]
+          },
+          "原始文本": {
+            "type": "string"
+          },
+          "异常": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
           }
         },
         "required": [
           "状态",
-          "主路",
-          "副路",
           "优先级"
         ],
-        "additionalProperties": false
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "required": [
+              "原始文本",
+              "异常"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "主路"
+                  ]
+                },
+                {
+                  "required": [
+                    "副路"
+                  ]
+                }
+              ]
+            },
+            "properties": {
+              "状态": {
+                "enum": [
+                  "单路识别",
+                  "待核对",
+                  "人工确认"
+                ]
+              }
+            }
+          },
+          {
+            "required": [
+              "主路",
+              "副路"
+            ],
+            "not": {
+              "required": [
+                "原始文本"
+              ]
+            },
+            "properties": {
+              "状态": {
+                "enum": [
+                  "一致",
+                  "不一致",
+                  "仅主路",
+                  "仅副路",
+                  "人工确认"
+                ]
+              }
+            }
+          }
+        ]
       },
       "截断": {
         "type": "boolean"

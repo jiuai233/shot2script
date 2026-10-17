@@ -8,7 +8,7 @@ from pathlib import Path
 from .storage import read, save_board, write
 from .snapshot import summary, field_changes
 
-DECISIONS = ("主路", "副路", "字幕", "手改", "删除")
+DECISIONS = ("原文", "主路", "副路", "字幕", "手改", "删除")
 
 
 def apply_results(episode, decisions):
@@ -44,7 +44,11 @@ def apply_results(episode, decisions):
         # 采用来源与生成页时的原文比较；后续声线、听辨、核对补充不使页面失效。
         reference = snapshot_by_id[ident].get("核对", {})
         source_text = decisions.get("字幕参考", {}).get(ident, reference.get(source)) if source == "字幕" else reference.get(source)
-        if source in ("主路", "副路", "字幕") and (not source_text or text != source_text):
+        if source == "原文":
+            source_text = snapshot_by_id[ident]["文本"]
+        if "原始文本" in check and source in ("主路", "副路"):
+            raise ValueError(f"单路记录不接受旧双路决定：{ident}")
+        if source in ("原文", "主路", "副路", "字幕") and (not source_text or text != source_text):
             raise ValueError(f"选定来源与最终文本不一致，请用手改：{ident}")
         selected[ident] = decision
         if source != "删除":
