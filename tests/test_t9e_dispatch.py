@@ -132,3 +132,14 @@ def test_merge_severity_conflict_preserves_higher_level():
              '原文': '资料存在冲突', '依据': '主副路不一致', '修正要求': '回听'}
     result = merge_review_issues([{'问题': [issue]}, {'问题': [{**issue, '级别': '阻断'}]}])
     assert len(result) == 1 and result[0]['级别'] == '阻断'
+
+
+def test_custom_review_prompt_is_not_formal_acceptance(board, monkeypatch, tmp_path):
+    prompt = tmp_path / 'review.md'
+    prompt.write_text('自定义对比试验提示词')
+    images = list((board / '素材/frames').glob('*.jpg'))
+    monkeypatch.setattr(agent, 'run', lambda *a, **k: events(review(), images))
+    output = board / 'custom-review.json'
+    result = dispatch('验收', board, {}, output, prompt_file=prompt)
+    assert result['全文审查完成']
+    assert json.loads(output.with_suffix('.coverage.json').read_text())['模拟调用'] is True

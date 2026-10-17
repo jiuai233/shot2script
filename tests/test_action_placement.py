@@ -146,3 +146,15 @@ def test_reviewed_short_rewording_is_allowed_but_not_silent_rewriting(board):
 def test_placement_requires_valid_position_sentence_and_evidence(board, field, value):
     change(board, '动作记录', lambda rows: rows[1]['排布'].update({field: value}))
     assert '动作记录' in rules(board)
+
+
+def test_punctuation_only_rendering_cannot_cover_an_action(board):
+    change(board, '动作记录', lambda rows: rows[1]['排布'].update(表述='。'))
+    path = board / '工作稿.md'
+    path.write_text(path.read_text().replace('右掌拍在桌面上，抬高声音', '抬高声音'))
+    assert '动作呈现待核实' in rules(board)
+
+
+def test_point_observation_at_speech_start_is_a_valid_time(board):
+    change(board, '动作记录', lambda rows: rows[1].update(起='00:05.0', 止='00:05.0'))
+    assert '动作对白时序' not in rules(board)

@@ -65,9 +65,26 @@ def accept_review(board, *, version=None, simulated=False):
     """离线构造审查回执，只测试正式稿规则。"""
     result = {'审查范围': {'场景': ['场景1-1'], '对白句': 'E01-S001 至 E01-S003'},
               '问题': [], '结论': '通过'}
-    coverage = [{'片段': row['id'], '状态': '完成', '授权帧数': 1, '已读帧数': 1,
-                 '已读帧': ['测试帧'], '结果文件': '测试结果'}
-                for row in read_json(board / '片段表.json')['片段']]
+    table = read_json(board / '镜头表.json')
+    video = board / 'fixture.mp4'
+    if not video.exists():
+        video.write_bytes(b'fixture-video')
+    table['视频'] = str(video)
+    save(board / '镜头表.json', table)
+    shots = table['镜头']
+    for shot in shots:
+        for frame in shot['帧']:
+            path = board / '素材/frames' / frame['文件']
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b'fixture-frame')
+    coverage = []
+    for row in read_json(board / '片段表.json')['片段']:
+        wanted = set(row['镜头']) | {row.get('衔接前'), row.get('衔接后')}
+        paths = [str((board / '素材/frames' / f['文件']).resolve())
+                 for shot in shots if shot['id'] in wanted for f in shot['帧']]
+        coverage.append({'片段': row['id'], '状态': '完成', '授权帧数': len(paths), '已读帧数': len(paths),
+                         '已读帧': paths, '结果文件': '测试结果'})
     output = board / '派发结果/验收.json'
     output.parent.mkdir(parents=True, exist_ok=True)
     finish_review(board, output, [result], coverage, version=version or review_version(board), simulated=simulated)
@@ -355,3 +372,13 @@ def test_formal_must_equal_reviewed_working_copy(board):
     formal = board / '正式稿.md'
     formal.write_text((board / '工作稿.md').read_text().replace('今天必须说清楚。', '今天必须说清楚！'))
     assert '交付版本不一致' in rules(board, script=formal, formal=True)
+
+
+def test_adding_unrelated_later_episode_role_does_not_expire_this_episode(board):
+    accept_review(board)
+    def add_role(rows):
+        role = copy.deepcopy(rows[0])
+        role.update(id='C099', 名称='戴金边眼镜的医生', 首次出场='E02-K001', 外观=[], 声线=[], 关系=[])
+        rows.append(role)
+    change(board.parent, '角色卡', add_role)
+    assert check_script(board, formal=True)['通过'], check_script(board, formal=True)

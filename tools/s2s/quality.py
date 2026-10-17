@@ -23,9 +23,20 @@ def review_version(directory):
                  '口型记录.json', '声纹聚类.json', '声纹候选.json'):
         path = directory / name
         version[name] = path.read_text(encoding='utf-8') if path.is_file() else None
+    table = json.loads(version['镜头表.json'])
+    video = Path(table['视频'])
+    video = video if video.is_absolute() else PROJECT_ROOT / video
+    version['视频版本'] = ({'路径': str(video.resolve()), '字节': video.stat().st_size,
+                            '修改时间ns': video.stat().st_mtime_ns} if video.is_file() else None)
     roles_path = directory.parent / '角色卡.json'
     roles = read_json(roles_path)
-    version['角色卡'] = [{k: v for k, v in role.items() if k != '性格总结'} for role in roles]
+    referenced = set()
+    for name, fields in (('归属表.json', ('说话人',)), ('动作记录.json', ('执行者', '对象')),
+                         ('临时人物.json', ('映射',))):
+        for row in json.loads(version[name] or '[]'):
+            referenced.update(row.get(field) for field in fields)
+    version['角色卡'] = [{k: v for k, v in role.items() if k != '性格总结'} for role in roles
+                       if role['id'] in referenced or role['名称'] in (version['工作稿.md'] or '')]
     version['帧'] = [[str(path.relative_to(directory)), path.stat().st_size, path.stat().st_mtime_ns]
                      for folder in ('frames', 'frames_dense')
                      for path in sorted((directory / '素材' / folder).rglob('*')) if path.is_file()]
@@ -38,23 +49,68 @@ def check_review(directory):
     """只有当前稿件与证据的完整独立审查可用于正式稿。"""
     directory = Path(directory)
     version = review_version(directory)
-    segments = [row['id'] for row in read_json(directory / '片段表.json')['片段']]
-    for path in sorted((directory / '派发结果').rglob('*.coverage.json')):
+    segments = read_json(directory / '片段表.json')['片段']
+    shots = read_json(directory / '镜头表.json')['镜头']
+    expected = {}
+    for segment in segments:
+        wanted = set(segment['镜头']) | {segment.get('衔接前'), segment.get('衔接后')}
+        expected[segment['id']] = {str((directory / '素材/frames' / frame['文件']).resolve())
+                                   for shot in shots if shot['id'] in wanted for frame in shot['帧']}
+    available = {str((directory / item[0]).resolve()) for item in version['帧']
+                 if Path(item[0]).suffix.lower() == '.jpg'}
+    actions = read_json(directory / '动作记录.json')
+    required_evidence = {segment['id']: [] for segment in segments}
+    for segment in segments:
+        wanted = set(segment['镜头']) | {segment.get('衔接前'), segment.get('衔接后')}
+        for action in actions:
+            if action['确定度'] != '确认' or action['镜头'] not in wanted:
+                continue
+            for filename in action['依据帧']:
+                candidates = {path for path in available if Path(path).name == filename}
+                if not candidates:
+                    return False
+                required_evidence[segment['id']].append(candidates)
+    sounds = read_json(directory / '声音记录.json')
+    sentence_range = f"{sounds[0]['id']} 至 {sounds[-1]['id']}" if sounds else '无对白'
+    scenes = re.findall(r'^场景\d+-\d+', version['工作稿.md'], re.M)
+    review_schema = read_json(Path(__file__).with_name('dispatch') / 'role_schemas.json')['验收']
+    candidates = []
+    for path in (directory / '派发结果').rglob('*.coverage.json'):
         try:
             receipt = read_json(path)
-            review = read_json(path.with_name(path.name.removesuffix('.coverage.json') + '.json'))
-            rows = receipt.get('片段', [])
-            if (receipt.get('全文审查完成') is True and receipt.get('模拟调用') is False
-                    and receipt.get('输入版本') == version and receipt.get('验收结果') == review
-                    and review.get('结论') == '通过' and not review.get('问题')
-                    and not any(row.get('结果') != '通过' for row in review.get('复核', []))
-                    and segments and [row['片段'] for row in rows] == segments
-                    and all(row.get('状态') == '完成' and row.get('授权帧数', 0) > 0
-                            and row.get('已读帧数') == row['授权帧数'] for row in rows)):
-                return True
-        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            if receipt.get('模拟调用') is False and receipt.get('输入版本') == version:
+                candidates.append((path, receipt))
+        except (OSError, ValueError, AttributeError):
             continue
-    return False
+    if not candidates:
+        return False
+    # 同一版本采用最近一次真实审查，失败或残缺不能回退到旧通过。
+    path, receipt = max(candidates, key=lambda item: item[0].stat().st_mtime_ns)
+    try:
+        review = read_json(path.with_name(path.name.removesuffix('.coverage.json') + '.json'))
+        rows = receipt.get('片段', [])
+        if not Draft202012Validator(review_schema).is_valid(review):
+            return False
+        return bool(version['视频版本'] is not None
+                    and receipt.get('全文审查完成') is True and receipt.get('验收结果') == review
+                    and review.get('模式') == '全文审查' and review.get('集') == int(directory.name[1:])
+                    and review['审查范围']['行'] == f"1-{len(version['工作稿.md'].splitlines())}"
+                    and review['审查范围']['镜头'] == f"{shots[0]['id']} 至 {shots[-1]['id']}"
+                    and set(review['审查范围']['场景']) == set(scenes)
+                    and review['审查范围']['对白句'] == sentence_range
+                    and review.get('结论') == '通过' and not review.get('问题')
+                    and review.get('统计') == {'阻断': 0, '规范': 0}
+                    and not any(row.get('结果') != '通过' for row in review.get('复核', []))
+                    and expected and [row['片段'] for row in rows] == list(expected)
+                    and all(row.get('状态') == '完成' and expected[row['片段']]
+                            and expected[row['片段']].issubset(set(row.get('已读帧', [])))
+                            and set(row.get('已读帧', [])).issubset(available)
+                            and all(paths.intersection(row.get('已读帧', []))
+                                    for paths in required_evidence[row['片段']])
+                            and len(set(row.get('已读帧', []))) == len(row.get('已读帧', []))
+                            == row.get('已读帧数') == row.get('授权帧数') for row in rows))
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return False
 
 
 def issue_closed(issue):
@@ -77,7 +133,7 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
     data = {}
     try:
         text = script.read_text(encoding='utf-8')
-        for name in ('声音记录', '动作记录', '归属表', '对照表', '待核对', '问题清单', '临时人物'):
+        for name in ('镜头表', '片段表', '声音记录', '动作记录', '归属表', '对照表', '待核对', '问题清单', '临时人物'):
             path = directory / (name + '.json')
             if name == '临时人物' and not path.exists():
                 data[name] = []
@@ -98,6 +154,8 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
     if errors:
         return result
 
+    if len({role['id'] for role in roles}) != len(roles):
+        fail('角色卡编号重复', {}, '不同角色不能共用稳定角色 ID')
     for error in lint_text(text, roles, formal=formal)['错误']:
         fail(error['检查项'], {'行': error['行']}, error['命中词'])
     for error in check_coverage(directory, script)['错误']:
@@ -207,7 +265,7 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
             expression = (placement or {}).get('表述', action['动作'])
             for role_id, role in roles_by_id.items():
                 expression = expression.replace(role_id, role['名称'])
-            if normalize_text(expression) not in normalize_text(description):
+            if not normalize_text(expression) or normalize_text(expression) not in normalize_text(description):
                 fail('动作呈现待核实', {'行': number, '动作': ident}, '正文未包含确认动作表述；须保留事件，改写需先审核排布中的表述')
             if dialogue:
                 if dialogue[0] != actor['名称']:
@@ -215,9 +273,10 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
                 linked = (placement or {}).get('句')
                 sentences = [sound[s] for s in row['句'] if s in sound and (linked is None or s == linked)]
                 # 排布审核决定能否简写；时间仍须真实重叠，不能提前呈现说完后的动作。
-                if sentences and not any(time_seconds(action['起']) < time_seconds(s['止']) and
-                                         time_seconds(s['起']) < time_seconds(action['止']) <=
-                                         time_seconds(s['止']) for s in sentences):
+                a, b = time_seconds(action['起']), time_seconds(action['止'])
+                if sentences and not any((time_seconds(s['起']) <= a == b < time_seconds(s['止'])) or
+                                         (a < time_seconds(s['止']) and time_seconds(s['起']) < b <=
+                                          time_seconds(s['止'])) for s in sentences):
                     fail('动作对白时序', {'行': number, '动作': ident}, '动作不在关联对白时段内，不能合并进括号')
                 if any(attribution.get(s, {}).get('形态') != '画内' for s in row['句']):
                     fail('画外动作合并', {'行': number, '动作': ident}, '非画内对白不能合并可见动作')

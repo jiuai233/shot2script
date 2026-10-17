@@ -103,7 +103,7 @@ def review_full(episode, variables, output, *, timeout, call, validator, prompt_
                              '授权帧数': receipt['授权帧数'], '已读帧数': receipt['已读帧数'],
                              '已读帧': receipt['已读帧'], '结果文件': str(path)})
     return finish_review(episode, output, parts, coverage, version=version,
-                         simulated=call is not None or validator is not None)
+                         simulated=call is not None or validator is not None or prompt_file is not None)
 
 
 def finish_review(episode, output, parts, coverage, *, version, simulated=False):
@@ -112,11 +112,12 @@ def finish_review(episode, output, parts, coverage, *, version, simulated=False)
     complete = bool(expected) and [c['片段'] for c in coverage] == expected and all(c['状态'] == '完成' for c in coverage)
     unchanged = version == review_version(episode)
     shots = load(episode / '镜头表.json')['镜头']
+    sounds = load(episode / '声音记录.json')
     lines = (episode / '工作稿.md').read_text(encoding='utf-8').splitlines()
     result = {'模式': '全文审查', '集': int(episode.name[1:]),
               '审查范围': {'行': f'1-{len(lines)}', '场景': list(dict.fromkeys(s for part in parts for s in part['审查范围']['场景'])),
                            '镜头': f"{shots[0]['id']} 至 {shots[-1]['id']}" if complete else '画面未完整审查',
-                           '对白句': parts[0]['审查范围']['对白句']},
+                           '对白句': f"{sounds[0]['id']} 至 {sounds[-1]['id']}" if sounds else '无对白'},
               '问题': issues, '复核': [],
               '统计': {level: sum(i['级别'] == level for i in issues) for level in ('阻断', '规范')},
               '结论': '通过' if complete and unchanged and all(p['结论'] == '通过' for p in parts) and not issues else '不通过'}
