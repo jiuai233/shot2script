@@ -114,6 +114,17 @@ def test_word_spanning_long_pause_goes_to_side_with_more_time(crossing, expected
     assert float(rows[0]['止'][3:]) < right_start
 
 
+def test_two_lanes_same_word_same_time_preserve_vad_missed_speech():
+    voices = [{'起': .06, '止': .49}, {'起': 3.2, '止': 4}]
+    left = [word('奶奶，', .16, .24), word('奶', .96, 1.04), word('奶，', 1.2, 1.28),
+            word('你等', 1.5, 1.7), word('等我。', 2.24, 2.32)]
+    right = [word('奶', 1.02, 1.18), word('奶', 1.26, 1.34), word('你', 1.46, 1.56),
+             word('等', 1.66, 1.88), word('等', 1.96, 2.2), word('我。', 2.26, 2.36)]
+    rows, _ = segment_pair(left, right, voices, wave())
+    assert rows[0]['文本'] == '奶奶，奶奶，你等等我。'
+    assert float(rows[0]['止'][3:]) >= 2.4
+
+
 def test_fully_unreliable_lane_keeps_text_with_other_lane_voice_sentence():
     rows, _ = segment_pair([word('不丢', 2, 2.2), word('字。', 2.3, 2.4)],
                           [word('不丢字。', .2, .9)], [{'起': .1, '止': 1}], wave())

@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>shot2script · 架构与流程</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=Source+Serif+4:ital,opsz,wght@1,8..60,400;1,8..60,500&display=swap">
+<style>/*
+ * Tech Manual Style — design tokens
+ * Derived from the Pi Durable Technical Manual (1.0.3, 2026.10).
+ * Colour values were sampled from the rendered PDF; tints are the observed fills.
+ *
+ * Fonts (Google Fonts):
+ * <link rel="preconnect" href="https://fonts.googleapis.com">
+ * <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ * Chinese text: add &family=Noto+Serif+SC:wght@400;500 to the URL if readers may lack Songti (non-Apple).
+ * <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@600;700&family=Source+Sans+3:ital,wght@0,400;0,600;1,400&family=Source+Serif+4:ital,opsz,wght@1,8..60,400;1,8..60,500&display=swap">
+ */
+
+:root {
+  /* ---------- Typefaces: one job each ---------- */
+  --font-display: "Manrope", "Inter", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;        /* titles, logo */
+  --font-body: "Source Sans 3", "Source Sans Pro", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif; /* running text, tables */
+  --font-voice: "Source Serif 4", "Source Serif Pro", Georgia, "Songti SC", "Noto Serif SC", "STSong", serif;   /* italic: deks, captions, annotations */
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, "PingFang SC", "Noto Sans SC", monospace; /* labels, numbers, code */
+
+  /* ---------- Type scale (screen) ---------- */
+  --fs-display: clamp(2.75rem, 6vw, 4rem); /* cover title */
+  --fs-h1: clamp(1.875rem, 3.6vw, 2.375rem);
+  --fs-h2: 1.375rem;
+  --fs-h3: 1.0625rem;
+  --fs-dek: 1.1875rem;   /* serif italic subtitle under a title */
+  --fs-body: 1rem;
+  --fs-small: 0.8125rem; /* captions, table cells, notes */
+  --fs-code: 0.8125rem;
+  --fs-label: 0.6875rem; /* mono caps labels */
+  --fs-micro: 0.625rem;  /* running heads, figure-type tags */
+
+  --lh-tight: 1.1;
+  --lh-snug: 1.35;
+  --lh-dek: 1.45;
+  --lh-body: 1.65;
+
+  --tracking-display: -0.025em;
+  --tracking-heading: -0.015em;
+  --tracking-label: 0.18em;  /* mono caps labels: FIG. 1.3, PART 1, KEY */
+  --tracking-plate: 0.28em;  /* very wide: cover plate lines, edition line */
+
+  --weight-display: 700;
+  --weight-heading: 600;
+  --weight-strong: 600;
+
+  /* ---------- Spacing (4px base) ---------- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4.5rem;
+
+  --measure: 72ch;        /* comfortable text column */
+  --measure-dek: 46ch;    /* deks stay short, two lines at most */
+  --page-max: 60rem;      /* figures may run wider than text */
+
+  /* ---------- Lines and shapes ---------- */
+  --rule-hair: 1px;
+  --rule-accent: 3px;     /* left bar on figures and callouts */
+  --radius-node: 2px;     /* boxes are nearly square: drawn, not "UI" */
+  --radius-chip: 3px;
+  --radius-logo: 6px;
+  --step-size: 1.375rem;  /* circled step numbers */
+
+  /* ---------- Neutrals: warm paper, blue-black ink ---------- */
+  --paper: #FBF9F5;        /* page */
+  --panel: #F6F4EE;        /* figure plate background */
+  --well: #F1EFE7;         /* code blocks, quote wells, grey fill */
+  --grid-line: #EFEDE6;    /* engineering-paper grid on covers */
+  --rule: #D4D1C5;         /* hairlines, table rules, figure frame */
+  --rule-strong: #C5C2B4;  /* heading rule, table header rule */
+  --rule-soft: #E6E4DB;    /* row separators */
+
+  --ink: #1C2633;          /* text: blue-black, never pure black */
+  --ink-2: #4B5664;        /* secondary text */
+  --muted: #727A85;        /* deks, captions after the claim, labels */
+  --faint: #989CA1;        /* citations, sources, page furniture */
+
+  /* ---------- Semantic colours (fixed meaning, book-wide) ----------
+   * Each has: base (strokes, text, label), -line (box border), -tint (box fill).
+   * Pick the colour by what the thing IS, never for decoration.
+   */
+  --blue: #35739A;   --blue-line: #9EB6C4;   --blue-tint: #EEF3F7;    /* conversations, entries, transcript */
+  --aqua: #04828C;   --aqua-line: #90BCBD;   --aqua-tint: #ECF3F4;    /* session, commits, storage */
+  --aqua-strong: #D5E5E7;                                             /* the one emphasised store box */
+  --violet: #6F5F9D; --violet-line: #ABA3C8; --violet-tint: #F1EFF6;  /* submissions, inbox */
+  --green: #007C61;  --green-line: #8EC0B0;  --green-tint: #EAF3EF;   /* documents, synced state */
+  --amber: #9C6C1E;  --amber-line: #CAB392;  --amber-tint: #F7F2E8;   /* tasks, phases, checkpoints */
+  --amber-bar: #AB8347;                                               /* solid timeline bars */
+  --amber-strong: #ECE2D2;
+  --plum: #8D5B87;   --plum-line: #BFA6B7;   --plum-tint: #F6F0F4;    /* model, generation, provider */
+  --forest: #3B6B56; --forest-line: #99ADA1; --forest-tint: #ECEFE1;  /* tools, environment, external effects */
+  --indigo: #4D64A6; --indigo-line: #939DC2; --indigo-tint: #EFF1F8;  /* views, watchers, events, observers */
+  --rose: #A9556D;   --rose-line: #CB9EA8;   --rose-tint: #F8F0F2;    /* crash, abort, fault, error — failure ONLY */
+  --rose-strong: #F0E0E4;
+  --grey: #727A85;   --grey-line: #C5C2B4;   --grey-tint: #F1EFE7;    /* host app, inactive, outside range */
+
+  /* Default accent for a section = its chapter colour. Override per chapter. */
+  --accent: var(--blue);
+  --accent-line: var(--blue-line);
+  --accent-tint: var(--blue-tint);
+
+  /* ---------- Dark surface (part openers, dark mode) ---------- */
+  --night: #102032;        /* full-bleed part opener */
+  --night-2: #1F3147;      /* raised surface on night */
+  --night-rule: #2B3747;
+  --night-ghost: #1F3147;  /* giant chapter numeral */
+  --night-ink: #F1F3F7;
+  --night-muted: #C0CAD8;
+  --night-faint: #7E868F;
+  --night-accent: #6E9BD0; /* "PART 1" label, short accent rule */
+
+  /* ---------- Hatch pattern (waiting / pending / outside range) ---------- */
+  --hatch: repeating-linear-gradient(
+    -45deg,
+    var(--amber-tint) 0 3px,
+    color-mix(in srgb, var(--amber-line) 55%, var(--amber-tint)) 3px 4px
+  );
+}
+
+/* Chapter accents: put data-accent on a section to recolour numbers, figure bars, labels. */
+[data-accent="blue"]   { --accent: var(--blue);   --accent-line: var(--blue-line);   --accent-tint: var(--blue-tint); }
+[data-accent="aqua"]   { --accent: var(--aqua);   --accent-line: var(--aqua-line);   --accent-tint: var(--aqua-tint); }
+[data-accent="violet"] { --accent: var(--violet); --accent-line: var(--violet-line); --accent-tint: var(--violet-tint); }
+[data-accent="green"]  { --accent: var(--green);  --accent-line: var(--green-line);  --accent-tint: var(--green-tint); }
+[data-accent="amber"]  { --accent: var(--amber);  --accent-line: var(--amber-line);  --accent-tint: var(--amber-tint); }
+[data-accent="plum"]   { --accent: var(--plum);   --accent-line: var(--plum-line);   --accent-tint: var(--plum-tint); }
+[data-accent="forest"] { --accent: var(--forest); --accent-line: var(--forest-line); --accent-tint: var(--forest-tint); }
+[data-accent="indigo"] { --accent: var(--indigo); --accent-line: var(--indigo-line); --accent-tint: var(--indigo-tint); }
+[data-accent="rose"]   { --accent: var(--rose);   --accent-line: var(--rose-line);   --accent-tint: var(--rose-tint); }
+
+/* ---------- Dark mode: night surface, same semantic hues lifted for contrast ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #102032; --night: #0A1522; --panel: #15273B; --well: #1A2C41; --grid-line: #172A3F;
+    --rule: #2B3747; --rule-strong: #3A4757; --rule-soft: #22303F;
+    --ink: #F1F3F7; --ink-2: #D3D9E2; --muted: #A6B0BE; --faint: #7E868F;
+    --blue: #7FB0D3;   --blue-line: #3D5F78;   --blue-tint: #172D42;
+    --aqua: #5EC1C8;   --aqua-line: #2F6A70;   --aqua-tint: #12303A; --aqua-strong: #18414A;
+    --violet: #A99BD6; --violet-line: #4C4775; --violet-tint: #1D2541;
+    --green: #5CC4A6;  --green-line: #2B6555;  --green-tint: #13302E;
+    --amber: #D6A65A;  --amber-line: #6B5530;  --amber-tint: #2A2B2C; --amber-bar: #B58A4C; --amber-strong: #3A3226;
+    --plum: #C99AC2;   --plum-line: #5E4560;   --plum-tint: #251F36;
+    --forest: #8DBFA4; --forest-line: #3E5E4F;  --forest-tint: #182D2E;
+    --indigo: #93A6E0; --indigo-line: #44508A; --indigo-tint: #19254A;
+    --rose: #E0899F;   --rose-line: #7A3F52;   --rose-tint: #2E1F2C; --rose-strong: #3D2433;
+    --grey: #A6B0BE;   --grey-line: #3A4757;   --grey-tint: #1A2C41;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #102032; --night: #0A1522; --panel: #15273B; --well: #1A2C41; --grid-line: #172A3F;
+  --rule: #2B3747; --rule-strong: #3A4757; --rule-soft: #22303F;
+  --ink: #F1F3F7; --ink-2: #D3D9E2; --muted: #A6B0BE; --faint: #7E868F;
+  --blue: #7FB0D3;   --blue-line: #3D5F78;   --blue-tint: #172D42;
+  --aqua: #5EC1C8;   --aqua-line: #2F6A70;   --aqua-tint: #12303A; --aqua-strong: #18414A;
+  --violet: #A99BD6; --violet-line: #4C4775; --violet-tint: #1D2541;
+  --green: #5CC4A6;  --green-line: #2B6555;  --green-tint: #13302E;
+  --amber: #D6A65A;  --amber-line: #6B5530;  --amber-tint: #2A2B2C; --amber-bar: #B58A4C; --amber-strong: #3A3226;
+  --plum: #C99AC2;   --plum-line: #5E4560;   --plum-tint: #251F36;
+  --forest: #8DBFA4; --forest-line: #3E5E4F;  --forest-tint: #182D2E;
+  --indigo: #93A6E0; --indigo-line: #44508A; --indigo-tint: #19254A;
+  --rose: #E0899F;   --rose-line: #7A3F52;   --rose-tint: #2E1F2C; --rose-strong: #3D2433;
+  --grey: #A6B0BE;   --grey-line: #3A4757;   --grey-tint: #1A2C41;
+}
+
+/*
+ * Tech Manual Style — components
+ * Requires tokens.css. All classes are prefixed tm- so they can sit beside an existing stylesheet.
+ */
+
+/* ---------- Base ---------- */
+.tm {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "kern", "liga";
+  font-synthesis-style: none; /* CJK has no italic: keep Chinese upright in serif "voice" text */
+}
+:where(.tm) *, :where(.tm) *::before, :where(.tm) *::after { box-sizing: border-box; }
+:where(.tm) :is(p, ul, ol) { max-width: var(--measure); margin: 0 0 var(--space-4); }
+:where(.tm) strong { font-weight: var(--weight-strong); color: var(--ink); }
+:where(.tm) em { font-style: italic; }
+:where(.tm) a { color: var(--blue); text-decoration: none; }
+:where(.tm) a:hover { text-decoration: underline; text-underline-offset: 2px; }
+:where(.tm) code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  color: var(--blue);           /* inline identifiers read as "transcript-blue" ink */
+}
+:where(.tm) :is(h1, h2, h3) {
+  font-family: var(--font-display);
+  font-weight: var(--weight-heading);
+  color: var(--ink);
+  text-wrap: balance;
+  margin: 0;
+}
+:where(.tm) h2 { font-size: var(--fs-h2); line-height: var(--lh-snug); letter-spacing: var(--tracking-heading); margin: var(--space-6) 0 var(--space-3); }
+:where(.tm) h3 { font-size: var(--fs-h3); line-height: var(--lh-snug); margin: var(--space-5) 0 var(--space-2); }
+
+.tm-page {
+  max-width: var(--page-max);
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-7);
+}
+@media (min-width: 48rem) { .tm-page { padding-inline: var(--space-7); } }
+
+/* ---------- Labels: mono caps with wide tracking ---------- */
+.tm-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  font-weight: 400;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tm-label--ink { color: var(--ink); font-weight: 500; }
+.tm-label--accent { color: var(--accent); }
+.tm-plate {                       /* PLATE I · A CRASH, AND WHAT SURVIVES IT */
+  font-family: var(--font-mono);
+  font-size: var(--fs-label);
+  letter-spacing: var(--tracking-plate);
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+
+/* ---------- Running head / foot ---------- */
+.tm-runhead, .tm-runfoot {
+  display: flex; justify-content: space-between; gap: var(--space-4);
+  color: var(--muted);
+}
+.tm-runhead { font-size: var(--fs-small); margin-bottom: var(--space-4); }
+.tm-runfoot {
+  font-family: var(--font-mono); font-size: var(--fs-micro);
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  margin-top: var(--space-7);
+}
+.tm-runfoot .tm-folio { letter-spacing: 0; color: var(--ink); }
+
+/* ---------- Section head: number → title → serif dek → rule ---------- */
+.tm-section-head {
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-5);
+  border-bottom: var(--rule-hair) solid var(--rule-strong);
+}
+.tm-num {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  margin-bottom: var(--space-2);
+}
+.tm-section-head h1 {
+  font-size: var(--fs-h1);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--tracking-display);
+}
+.tm-dek {
+  font-family: var(--font-voice);
+  font-style: italic;
+  font-size: var(--fs-dek);
+  line-height: var(--lh-dek);
+  color: var(--muted);
+  max-width: var(--measure-dek);
+  margin: var(--space-3) 0 0;
+}
+
+/* ---------- Inline citations and cross-references ---------- */
+.tm-cite {                        /* spec §1, invariant 4 */
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  color: var(--faint);
+  white-space: nowrap;
+}
+.tm-xref {                        /* the commit (p. 29) */
+  color: inherit;
+  border-bottom: var(--rule-hair) solid var(--rule-strong);
+}
+.tm-xref .tm-page-ref { color: var(--faint); font-size: 0.86em; }
+
+/* ---------- Code and quote wells ---------- */
+.tm-code, :where(.tm) pre {
+  font-family: var(--font-mono);
+  font-size: var(--fs-code);
+  line-height: 1.6;
+  background: var(--well);
+  border: var(--rule-hair) solid var(--rule-soft);
+  border-left: var(--rule-accent) solid var(--ink-2);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
+  overflow-x: auto;
+  color: var(--ink);
+}
+.tm-code .tm-prompt { color: var(--green); }
+.tm-code .tm-out { color: var(--muted); }
+.tm-code-head {                   /* filename strip above a listing */
+  display: flex; justify-content: space-between;
+  font-family: var(--font-mono); font-size: var(--fs-micro);
+  color: var(--muted); margin-bottom: var(--space-1);
+}
+.tm-code-head b { color: var(--ink); font-weight: 700; }
+
+.tm-callout {                     /* CORE RULE — a quoted, load-bearing sentence */
+  background: var(--well);
+  border-left: var(--rule-accent) solid var(--accent);
+  padding: var(--space-4) var(--space-5);
+  margin: 0 0 var(--space-5);
+  max-width: none;
+}
+.tm-callout .tm-label { color: var(--accent); display: block; margin-bottom: var(--space-1); }
+.tm-callout p { margin: 0; max-width: none; }
+
+.tm-takeaways {                   /* WHAT THIS MEANS FOR YOU */
+  border: var(--rule-hair) solid var(--rule);
+  border-top: 2px solid var(--accent);
+  background: var(--paper);
+  padding: var(--space-4) var(--space-5);
+  margin: var(--space-5) 0;
+}
+.tm-takeaways .tm-label { display: block; margin-bottom: var(--space-2); }
+.tm-takeaways ul { margin: 0; padding-left: 1.1em; font-size: var(--fs-small); }
+.tm-takeaways li { margin-bottom: var(--space-1); }
+.tm-takeaways li::marker { color: var(--accent); }
+
+.tm-warning {                     /* experimental / failure notice: the only pink box */
+  background: var(--rose-tint);
+  border-left: var(--rule-accent) solid var(--rose);
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-small);
+  margin: 0 0 var(--space-5);
+}
+.tm-warning .tm-label { color: var(--rose); display: block; }
+
+.tm-sources {                     /* Sources: file (field); file §2 … */
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  line-height: 1.7;
+  color: var(--faint);
+  border-top: var(--rule-hair) solid var(--rule-strong);
+  padding-top: var(--space-3);
+  margin-top: var(--space-6);
+  max-width: none;
+}
+.tm-sources b { color: var(--ink-2); font-weight: 700; }
+
+/* ---------- Tables: horizontal hairlines only ---------- */
+.tm-table { width: 100%; border-collapse: collapse; font-size: var(--fs-small); margin: 0 0 var(--space-5); }
+.tm-table th {
+  text-align: left;
+  font-family: var(--font-mono); font-size: var(--fs-micro); font-weight: 400;
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  color: var(--muted);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: var(--rule-hair) solid var(--rule-strong);
+}
+.tm-table td {
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  border-bottom: var(--rule-hair) solid var(--rule-soft);
+  vertical-align: top;
+}
+.tm-table td:first-child { white-space: nowrap; }
+.tm-table td code { color: var(--ink); }
+.tm-table-wrap { overflow-x: auto; }
+
+/* ---------- Figure plate ---------- */
+.tm-fig {
+  background: var(--panel);
+  border: var(--rule-hair) solid var(--rule);
+  border-left: var(--rule-accent) solid var(--accent);
+  padding: var(--space-4) var(--space-5) var(--space-5);
+  margin: var(--space-6) 0 var(--space-2);
+  overflow-x: auto;
+}
+.tm-fig-head {
+  display: flex; align-items: baseline; gap: var(--space-4);
+  font-family: var(--font-mono); font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  margin-bottom: var(--space-4);
+}
+.tm-fig-id { color: var(--ink); font-weight: 700; }
+.tm-fig-title { color: var(--accent); }
+.tm-fig-type { margin-left: auto; color: var(--faint); font-size: var(--fs-micro); } /* FLOW · SEQUENCE · STATE · DECISION · STRUCTURE */
+.tm-fig svg { display: block; width: 100%; height: auto; max-width: 100%; }
+.tm-figcaption {
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  color: var(--muted);
+  margin: 0 0 var(--space-6);
+  max-width: none;
+}
+.tm-figcaption strong { color: var(--ink); }  /* first sentence = the claim */
+
+/* HTML nodes (when not drawing in SVG) */
+.tm-node {
+  --c: var(--grey); --c-line: var(--grey-line); --c-tint: var(--paper);
+  display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+  min-width: 7rem; padding: var(--space-2) var(--space-3);
+  background: var(--c-tint);
+  border: var(--rule-hair) solid var(--c-line);
+  border-radius: var(--radius-node);
+  font-size: var(--fs-small); line-height: 1.3; text-align: center; color: var(--ink);
+}
+.tm-node b { font-weight: var(--weight-strong); }
+.tm-node small { color: var(--muted); font-size: 0.9em; }
+.tm-node--mono { font-family: var(--font-mono); font-size: var(--fs-label); }
+.tm-node--party {                 /* sequence lifeline head: HOST, HARNESS … */
+  font-family: var(--font-mono); font-weight: 700;
+  letter-spacing: var(--tracking-label); text-transform: uppercase; font-size: var(--fs-label);
+}
+.tm-node[data-c="blue"]   { --c-line: var(--blue-line);   --c-tint: var(--blue-tint); }
+.tm-node[data-c="aqua"]   { --c-line: var(--aqua);        --c-tint: var(--aqua-tint); }
+.tm-node[data-c="violet"] { --c-line: var(--violet-line); --c-tint: var(--violet-tint); }
+.tm-node[data-c="green"]  { --c-line: var(--green-line);  --c-tint: var(--green-tint); }
+.tm-node[data-c="amber"]  { --c-line: var(--amber-line);  --c-tint: var(--amber-tint); }
+.tm-node[data-c="plum"]   { --c-line: var(--plum-line);   --c-tint: var(--plum-tint); }
+.tm-node[data-c="forest"] { --c-line: var(--forest-line); --c-tint: var(--forest-tint); }
+.tm-node[data-c="indigo"] { --c-line: var(--indigo-line); --c-tint: var(--indigo-tint); }
+.tm-node[data-c="rose"]   { --c-line: var(--rose-line);   --c-tint: var(--rose-tint); }
+.tm-node[data-c="grey"]   { --c-line: var(--grey-line);   --c-tint: var(--grey-tint); }
+.tm-node--emph { border-width: 1.5px; }
+.tm-node--pending { border-style: dashed; background: transparent; }
+.tm-node--hatched { background: var(--hatch); color: var(--muted); }
+
+/* Circled step number */
+.tm-step {
+  display: inline-grid; place-items: center;
+  width: var(--step-size); height: var(--step-size);
+  border: var(--rule-hair) solid var(--ink-2); border-radius: 50%;
+  font-family: var(--font-voice); font-size: 0.8rem; line-height: 1;
+  color: var(--ink); background: var(--paper);
+  flex: none;
+}
+
+/* Boxed chip: SIGKILL, run 14, a version */
+.tm-chip {
+  display: inline-block;
+  font-family: var(--font-mono); font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label); text-transform: uppercase;
+  padding: 0.15em 0.6em;
+  border: var(--rule-hair) solid var(--rule-strong);
+  border-radius: var(--radius-chip);
+  color: var(--ink-2); background: var(--well);
+}
+.tm-chip--rose { color: var(--rose); border-color: var(--rose); background: var(--rose-tint); }
+
+/* ---------- Key / legend ---------- */
+.tm-key { list-style: none; padding: 0; margin: 0; display: grid; gap: var(--space-2); }
+.tm-key li { display: grid; grid-template-columns: var(--step-size) 1fr; column-gap: var(--space-3); align-items: start; }
+.tm-key-term {
+  font-family: var(--font-mono); font-weight: 700; font-size: var(--fs-label);
+  letter-spacing: var(--tracking-label); text-transform: uppercase; color: var(--ink);
+}
+.tm-key-def { grid-column: 2; font-family: var(--font-voice); font-style: italic; font-size: var(--fs-small); color: var(--ink-2); line-height: 1.35; }
+
+.tm-dots { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); list-style: none; padding: 0; margin: 0; }
+.tm-dots li { display: inline-flex; align-items: center; gap: 0.45em; }
+.tm-dots li::before { content: ""; width: 0.55em; height: 0.55em; border-radius: 50%; background: var(--dot, var(--grey)); }
+
+/* ---------- Part opener (dark, full bleed) ---------- */
+.tm-part {
+  position: relative; overflow: hidden;
+  background: var(--night); color: var(--night-ink);
+  padding: var(--space-8) var(--space-5) var(--space-7);
+  min-height: 34rem;
+}
+@media (min-width: 48rem) { .tm-part { padding-inline: var(--space-8); } }
+.tm-part .tm-label { color: var(--night-accent); }
+.tm-part h1 {
+  color: var(--night-ink); font-family: var(--font-display);
+  font-size: calc(var(--fs-h1) * 1.45); font-weight: var(--weight-heading);
+  letter-spacing: var(--tracking-display); line-height: var(--lh-tight);
+  margin: var(--space-4) 0 var(--space-4);
+}
+.tm-part .tm-dek { color: var(--night-muted); }
+.tm-part-rule { height: 1px; background: var(--night-rule); margin: var(--space-6) 0 var(--space-3); position: relative; max-width: 48rem; }
+.tm-part-rule::before { content: ""; position: absolute; left: 0; top: 0; width: 8rem; height: 1px; background: var(--night-accent); }
+.tm-part-toc { list-style: none; padding: 0; margin: 0; max-width: 48rem; position: relative; z-index: 1; }
+.tm-part-toc li {
+  display: grid; grid-template-columns: 3.5rem 1fr auto; align-items: baseline;
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--night-rule); font-size: var(--fs-small);
+}
+.tm-part-toc .n, .tm-part-toc .p { font-family: var(--font-mono); font-size: var(--fs-label); color: var(--night-accent); }
+.tm-part-toc .p { color: var(--night-faint); }
+.tm-ghost {                        /* giant numeral, bottom-right, tinted to the part colour */
+  position: absolute; right: var(--space-6); bottom: -0.12em;
+  font-family: var(--font-display); font-weight: 700;
+  font-size: clamp(9rem, 28vw, 18rem); line-height: 1; letter-spacing: -0.04em;
+  color: color-mix(in srgb, var(--accent) 22%, var(--night));
+  pointer-events: none; user-select: none;
+}
+
+/* ---------- Cover ---------- */
+.tm-cover {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 2rem 2rem;
+  padding: var(--space-7) var(--space-4);
+}
+@media (min-width: 48rem) { .tm-cover { padding: var(--space-8) var(--space-8); } }
+.tm-masthead { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-5); flex-wrap: wrap; }
+.tm-logo { display: inline-flex; align-items: center; gap: var(--space-3); font-family: var(--font-display); font-weight: var(--weight-display); font-size: 1.75rem; letter-spacing: var(--tracking-heading); }
+.tm-logo-mark { width: 2.25rem; height: 2.25rem; border-radius: var(--radius-logo); background: var(--amber); display: grid; place-items: center; color: var(--paper); }
+.tm-edition { text-align: right; }
+.tm-plate-bar {
+  display: flex; justify-content: space-between; gap: var(--space-4); flex-wrap: wrap;
+  border-top: var(--rule-hair) solid var(--rule-strong); border-bottom: var(--rule-hair) solid var(--rule-strong);
+  padding: var(--space-3) 0; margin: var(--space-6) 0 var(--space-5);
+}
+.tm-cover-title {
+  font-family: var(--font-display); font-weight: var(--weight-display);
+  font-size: var(--fs-display); line-height: 1; letter-spacing: var(--tracking-display);
+  margin: var(--space-7) 0 var(--space-1);
+}
+.tm-cover-sub {
+  font-family: var(--font-voice); font-style: italic; font-weight: 400;
+  font-size: calc(var(--fs-dek) * 1.9); line-height: 1.1; color: var(--amber); margin: 0 0 var(--space-5);
+}
+
+/* ---------- Chinese ----------
+ * Wide caps tracking reads as gaps between hanzi; tighten it. Body gets more leading. */
+.tm:lang(zh) { line-height: 1.75; }
+:lang(zh) :is(.tm-label, .tm-plate, .tm-fig-head, .tm-key-term, .tm-runfoot, .tm-table th, .tm-chip) { letter-spacing: 0.08em; }
+:lang(zh) :is(.tm-section-head h1, .tm-cover-title, .tm-part h1) { letter-spacing: 0; }
+
+/* ---------- Print (Paged.js / browser print) ---------- */
+@media print {
+  .tm { font-size: 10pt; }
+  .tm-fig, .tm-takeaways, .tm-callout, .tm-code, .tm-table { break-inside: avoid; }
+  .tm-figcaption { break-before: avoid; }
+  .tm-part { break-before: page; break-after: page; min-height: 100vh; }
+  .tm-section-head { break-before: page; break-after: avoid; }
+}
+
+:root { --page-max: 82rem; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body { margin:0; }
+button,a { -webkit-tap-highlight-color:transparent; }
+a:focus-visible,button:focus-visible,summary:focus-visible,.scroll-plate:focus-visible { outline:2px solid var(--blue); outline-offset:5px; }
+.shell { max-width:var(--page-max); margin:auto; padding:0 40px; }
+.topbar { border-bottom:1px solid var(--rule); }
+.topbar .shell { min-height:64px; display:flex; justify-content:space-between; align-items:center; gap:20px; }
+.brand { color:var(--ink); font-family:var(--font-display); font-size:20px; font-weight:700; letter-spacing:-.025em; }
+.brand::before { content:''; display:inline-block; width:12px; height:12px; margin-right:12px; background:var(--amber); }
+.edition { font:11px var(--font-mono); color:var(--muted); }
+.hero { padding-top:56px; padding-bottom:32px; }
+.hero h1 { font-size:clamp(30px,4.8vw,58px); line-height:1.2; margin:12px 0 20px; letter-spacing:-.025em; }
+.hero .tm-dek { max-width:64ch; color:var(--ink-2); font-size:19px; }
+.hero .status-line { margin-top:26px; padding-top:16px; border-top:1px solid var(--rule); color:var(--ink-2); font-size:14px; max-width:none; }
+.contents { position:sticky; top:0; z-index:5; background:var(--paper); border-block:1px solid var(--rule); }
+.contents .shell { display:flex; align-items:center; gap:30px; min-height:56px; }
+.contents a { color:var(--ink-2); font-size:14px; padding:16px 0; white-space:nowrap; }
+.contents a span { font:11px var(--font-mono); color:var(--amber); margin-right:8px; }
+.theme { margin-left:auto; flex:none; border:1px solid var(--rule-strong); background:var(--paper); color:var(--ink); padding:7px 12px; border-radius:2px; font:13px var(--font-body); cursor:pointer; }
+section { padding:48px 0 0; }
+.section-title { font-size:clamp(24px,3vw,34px); line-height:1.35; }
+.tm-section-head { margin-bottom:24px; }
+.tm-section-head p { max-width:65ch; font-size:17px; }
+.legend-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px 24px; margin:24px 0; }
+.legend-item { border-top:1px solid var(--rule-soft); padding-top:12px; font-size:13px; color:var(--ink-2); }
+.swatch { width:9px;height:9px;display:inline-block;margin-right:8px;background:var(--swatch); }
+.legend-item b { display:block; margin-bottom:4px; font-weight:600; color:var(--ink); }
+.tm-fig { margin-top:24px; padding:20px 24px; overflow:visible; }
+.tm-fig-head { flex-wrap:wrap; }
+.tm-fig-title { font-size:13px; letter-spacing:.04em; }
+.scroll-plate { overflow-x:auto; overscroll-behavior-x:contain; }
+.tm-fig .diagram { display:block; width:100%; min-width:900px; max-width:none; height:auto; }
+.diagram text { fill:var(--ink); font-family:var(--font-body); font-synthesis:none; }
+.diagram .node-title { font-size:18px; font-weight:600; }
+.diagram .node-sub { fill:var(--ink-2); font-size:14px; }
+.diagram .group-label { fill:var(--muted); font:13px var(--font-mono); letter-spacing:.05em; }
+.diagram .edge-label { font:12px var(--font-mono); fill:var(--muted); }
+.diagram .note { fill:var(--muted); font:italic 13px var(--font-voice); }
+.diagram .decision { font-size:16px; font-weight:600; }
+.arrow-key { display:flex; gap:18px; flex-wrap:wrap; font-size:12px; color:var(--ink-2); border-top:1px solid var(--rule-soft); padding-top:14px; margin-top:16px; }
+.arrow-key span { white-space:nowrap; }
+.stroke { display:inline-block;width:26px;border-top:2px solid var(--c);vertical-align:middle;margin-right:7px; }
+.stroke.dashed { border-top-style:dashed; }
+.tm-figcaption { font-size:14px; margin-top:12px; }
+.source-link { font-family:var(--font-mono); overflow-wrap:anywhere; }
+.tm-sources { font-size:11px; color:var(--muted); }
+.tm-sources a { color:var(--ink-2); text-decoration:underline; text-underline-offset:3px; }
+.notes-grid { display:grid;grid-template-columns:1fr 1fr;gap:20px; }
+.notes-grid .tm-takeaways { margin:12px 0 0; }
+.tm-takeaways ul { max-width:none; font-size:14px; }
+.tm-table { font-size:14px; }
+.tm-table th { font-size:12px; letter-spacing:.04em; }
+.tm-table td { padding-block:16px; }
+.tm-table td:first-child { width:20%; }
+.status-tag { font:12px var(--font-mono);padding:3px 7px;border:1px solid var(--amber-line);color:var(--amber);white-space:nowrap; }
+details { border-block:1px solid var(--rule); margin-top:24px; }
+summary { cursor:pointer; padding:16px 0; color:var(--ink); font-weight:600; }
+details .tm-table-wrap { margin-top:8px; }
+footer { margin-top:56px; padding:22px 0 32px; border-top:1px solid var(--rule); }
+footer .shell { display:flex;justify-content:space-between;gap:20px;font:11px var(--font-mono);color:var(--muted); }
+.small-note { color:var(--ink-2); font-size:14px; max-width:none; }
+@media(max-width:700px) { .shell{padding-inline:18px}.edition{max-width:135px;text-align:right;font-size:10px}.hero{padding-top:32px}.contents .shell{gap:16px}.contents a{font-size:12px}.contents a span{margin-right:4px}.theme{font-size:12px;padding:6px 8px}.legend-grid{grid-template-columns:1fr 1fr}.notes-grid{grid-template-columns:1fr}.tm-fig{padding:14px 10px}.tm-fig-head{gap:10px}.tm-fig-type{width:100%;margin-left:0}.tm-table td:first-child{white-space:normal;width:auto}.section-title{font-size:25px}section{padding-top:36px}.tm-takeaways{padding:16px} }
+@media(prefers-reduced-motion:reduce) { html{scroll-behavior:auto} }
+@media print { .contents{position:static}.theme{display:none}.shell{padding-inline:12px}.tm-fig .diagram{min-width:0} .tm-fig{break-inside:auto}.scroll-plate{overflow:visible}section{break-before:page}.hero{padding-top:20px} }
+</style></head>
+<body class="tm">
+<svg width="0" height="0" aria-hidden="true" style="position:absolute"><defs><marker id="a-ink" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--ink)"/></marker><marker id="a-aqua" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--aqua)"/></marker><marker id="a-plum" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--plum)"/></marker><marker id="a-green" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--green)"/></marker><marker id="a-forest" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--forest)"/></marker><marker id="a-indigo" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--indigo)"/></marker><marker id="a-grey" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--grey)"/></marker><marker id="a-rose" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 .8 L7.5 4 L0 7.2 Z" fill="var(--rose)"/></marker></defs></svg>
+<header class="topbar"><div class="shell"><a class="brand" href="#top">shot2script</a><span class="edition">技术图册 / PRD 1.1</span></div></header>
+<div class="hero shell" id="top">
+<span class="tm-label tm-label--accent" style="--accent:var(--amber)">SYSTEM ATLAS</span>
+<h1>从视频证据到制作剧本</h1>
+<p class="tm-dek">固定工具整理素材，角色 agent 识别内容，主控维护黑板，独立验收决定交付。</p>
+<p class="status-line"><strong>当前阶段：工具与编排代码已有，完整端到端待验收。</strong><br>正在刷新音频切句与黑板数据；角色卡、成稿和三集至 Word 的完整链路尚待试跑。</p>
+</div>
+<nav class="contents" aria-label="图册目录"><div class="shell"><a href="#architecture"><span>01</span>架构图</a><a href="#workflow"><span>02</span>流程图</a><a href="#state"><span>03</span>实现状态</a><button class="theme" type="button" id="theme" aria-pressed="false">切换深色</button></div></nav>
+<main class="shell">
+<section id="legend" data-accent="blue" aria-labelledby="legend-title">
+<header class="tm-section-head"><span class="tm-num">00 / 图例</span><h2 class="section-title" id="legend-title">图中的颜色代表职责与数据类型</h2><p class="tm-dek">同类对象保持同色；虚线框及标注“待接入”的连接表示尚未接通。</p></header>
+<div class="legend-grid">
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--forest)"></i>固定工具</b>素材处理与辅助检测</div>
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--plum)"></i>角色 agent</b>主控、识别、成稿与验收</div>
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--aqua)"></i>本地黑板</b>资料落盘与受控写入</div>
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--blue)"></i>主要记录</b>视频与画声证据</div>
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--green)"></i>交付文档</b>正式稿、合并稿与 Word</div>
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--amber)"></i>流程检查点</b>验收条件与待完成项</div>
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--grey)"></i>人工参与</b>回听、裁定与待接入连接</div>
+<div class="legend-item"><b><i class="swatch" style="--swatch:var(--rose)"></i>未解决问题</b>阻止正式交付的未决分支</div>
+</div>
+<p class="tm-sources"><b>依据：</b><a href="../README.md">README.md</a>；<a href="../prompts/00-数据约定.md">prompts/00-数据约定.md §2–3</a>。图中待听通知使用观察事件色 indigo；实线框表示已有模块或已明确流程，不表示全链路已验收。</p>
+</section>
+<section id="architecture" data-accent="aqua" aria-labelledby="architecture-title">
+<header class="tm-section-head"><span class="tm-num">01 / 系统架构</span><h2 class="section-title" id="architecture-title">内容识别与机械处理分层，结果汇入本地黑板</h2><p class="tm-dek">黑板是按剧、按集组织的本地文件集合，主控负责内容结果的审核与写入。</p></header>
+<figure class="tm-fig"><div class="tm-fig-head"><span class="tm-fig-id">FIG. 1.1</span><span class="tm-fig-title">素材、主控与角色之间的协作边界</span><span class="tm-fig-type">STRUCTURE</span></div><div class="scroll-plate" tabindex="0" role="region" aria-label="系统架构图，可横向滚动"><svg xmlns="http://www.w3.org/2000/svg" class="diagram" viewBox="0 0 1120 1090" role="img" aria-labelledby="architecture-diagram-title architecture-desc"><title id="architecture-diagram-title">固定处理、主控与子角色围绕本地黑板协作</title><desc id="architecture-desc">视频经固定工具生成证据；单集主控派发四类角色，审核结果并写入本地黑板；人工负责回听和未决裁定；全剧主控负责角色继承、跨集检查和交付。口型和声纹侧表向角色卡的连接尚待接入。</desc><rect x="250" y="25" width="830" height="330" rx="2" fill="none" stroke="var(--forest-line)"/><text x="270" y="52" class="group-label" text-anchor="start">固定处理层 · 读取 / 切分 / 取帧 / 格式处理</text><g><rect x="30" y="118" width="180" height="88" rx="2" fill="var(--blue-tint)" stroke="var(--blue-line)"/><text x="120.0" y="147" class="node-title" text-anchor="middle">单集原视频</text><text x="120.0" y="171" class="node-sub" text-anchor="middle">画面 + 原声 + 集号</text></g><path d="M210 162 H250" fill="none" stroke="var(--forest)" stroke-width="1.6" marker-end="url(#a-forest)" stroke-dasharray="5 4"/><text x="230" y="145" class="edge-label" text-anchor="middle" style="fill:var(--forest)">调用工具</text><g><rect x="280" y="80" width="350" height="90" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="455.0" y="109" class="node-title" text-anchor="middle">镜头切分与取帧</text><text x="455.0" y="133" class="node-sub" text-anchor="middle">PySceneDetect + ffmpeg</text><text x="455.0" y="154" class="node-sub" text-anchor="middle">镜头表 / 片段表 / 帧图片</text></g><g><rect x="700" y="80" width="350" height="90" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="875.0" y="109" class="node-title" text-anchor="middle">双路识别与音频切句</text><text x="875.0" y="133" class="node-sub" text-anchor="middle">Qwen3-ASR 主路 / Grok 副路</text><text x="875.0" y="154" class="node-sub" text-anchor="middle">FSMN-VAD + 能量 + 词级时间</text></g><g><rect x="280" y="210" width="350" height="112" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="455.0" y="239" class="node-title" text-anchor="middle">声纹与口型证据工具</text><text x="455.0" y="263" class="node-sub" text-anchor="middle">CAM++ / MediaPipe / YuNet / Light-ASD</text><text x="455.0" y="284" class="node-sub" text-anchor="middle">声纹聚类 / 口型记录 / 跨集候选</text><text x="455.0" y="305" class="node-sub" text-anchor="middle">仅供归属核对，不自动确认人物</text></g><g><rect x="700" y="210" width="350" height="112" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="875.0" y="239" class="node-title" text-anchor="middle">字幕与画面文字识别</text><text x="875.0" y="263" class="node-sub" text-anchor="middle">Apple Vision OCR</text><text x="875.0" y="284" class="node-sub" text-anchor="middle">字幕仅作参考，不参与自动切句</text><text x="875.0" y="305" class="node-sub" text-anchor="middle">画面字卡与地点信息辅助核对</text></g><path d="M555 355 V420" fill="none" stroke="var(--aqua)" stroke-width="1.6" marker-end="url(#a-aqua)"/><text x="625" y="392" class="edge-label" text-anchor="middle" style="fill:var(--aqua)">工具产物写入</text><rect x="30" y="420" width="235" height="240" rx="2" fill="none" stroke="var(--plum-line)"/><text x="50" y="447" class="group-label" text-anchor="start">主控层 · 按集推进</text><g><rect x="50" y="464" width="195" height="66" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="147.5" y="493" class="node-title" text-anchor="middle">全剧主控</text><text x="147.5" y="517" class="node-sub" text-anchor="middle">逐集调度 / 跨集变更审核</text></g><g><rect x="50" y="572" width="195" height="66" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="147.5" y="601" class="node-title" text-anchor="middle">单集主控</text><text x="147.5" y="625" class="node-sub" text-anchor="middle">派发 / 审核 / 写入 / 返修</text></g><path d="M147 530 V572" fill="none" stroke="var(--plum)" stroke-width="1.6" marker-end="url(#a-plum)"/><text x="198" y="556" class="edge-label" text-anchor="middle" style="fill:var(--plum)">派发本集</text><rect x="320" y="420" width="470" height="240" rx="2" fill="none" stroke="var(--aqua-line)"/><text x="340" y="447" class="group-label" text-anchor="start">本地黑板 · 剧目/{剧名}/</text><rect x="340" y="465" width="430" height="175" rx="2" fill="var(--aqua-tint)" stroke="var(--aqua-line)"/><text x="360" y="496" class="node-title" text-anchor="start">素材与证据</text><text x="360" y="523" class="node-sub" text-anchor="start">声音 / 镜头 / 字幕 / 动作 / 对白归属</text><line x1="360" y1="539" x2="750" y2="539" stroke="var(--aqua-line)"/><text x="360" y="565" class="node-title" text-anchor="start">全剧角色卡 + 单集内容 + 对照表</text><text x="360" y="592" class="node-sub" text-anchor="start">待核对 / 问题清单 / 状态与完成步骤</text><text x="360" y="620" class="note" text-anchor="start">声纹原始向量仅留本机，不进入提示词</text><path d="M245 605 H320" fill="none" stroke="var(--aqua)" stroke-width="1.6" marker-end="url(#a-aqua)"/><text x="282" y="591" class="edge-label" text-anchor="middle" style="fill:var(--aqua)">审核落盘</text><g><rect x="835" y="437" width="245" height="106" rx="2" fill="var(--grey-tint)" stroke="var(--grey-line)"/><text x="957.5" y="466" class="node-title" text-anchor="middle">人工回听与裁定</text><text x="957.5" y="490" class="node-sub" text-anchor="middle">逐句试听原声 / 比较两路文本</text><text x="957.5" y="511" class="node-sub" text-anchor="middle">采用文本或手改 → 应用裁定</text></g><path d="M790 465 H835" fill="none" stroke="var(--indigo)" stroke-width="1.6" marker-end="url(#a-indigo)" stroke-dasharray="2 4"/><path d="M835 523 H790" fill="none" stroke="var(--aqua)" stroke-width="1.6" marker-end="url(#a-aqua)" stroke-dasharray="5 4"/><text x="957" y="574" class="note" text-anchor="middle">字幕只提供参考，台词以原声为准</text><text x="957" y="603" class="note" text-anchor="middle">素材不足或返修未解 → 人工裁定</text><rect x="30" y="755" width="1050" height="170" rx="2" fill="none" stroke="var(--plum-line)"/><text x="50" y="782" class="group-label" text-anchor="start">子角色层 · 只读授权资料，返回提案，由主控写入黑板</text><g><rect x="55" y="806" width="225" height="88" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="167.5" y="835" class="node-title" text-anchor="middle">动作识别</text><text x="167.5" y="859" class="node-sub" text-anchor="middle">按片段并行 / 看全部授权帧</text><text x="167.5" y="880" class="node-sub" text-anchor="middle">不读取对白文字</text></g><g><rect x="315" y="806" width="225" height="88" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="427.5" y="835" class="node-title" text-anchor="middle">角色卡</text><text x="427.5" y="859" class="node-sub" text-anchor="middle">人物映射 / 对白归属</text><text x="427.5" y="880" class="node-sub" text-anchor="middle">看图时切换识图配置</text></g><g><rect x="575" y="806" width="225" height="88" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="687.5" y="835" class="node-title" text-anchor="middle">成稿</text><text x="687.5" y="859" class="node-sub" text-anchor="middle">已确认记录 → 剧本 + 对照表</text><text x="687.5" y="880" class="node-sub" text-anchor="middle">不读取帧图片</text></g><g><rect x="835" y="806" width="225" height="88" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="947.5" y="835" class="node-title" text-anchor="middle">独立验收</text><text x="947.5" y="859" class="node-sub" text-anchor="middle">全文文本 + 逐片段画面</text><text x="947.5" y="880" class="node-sub" text-anchor="middle">不读动作记录与归属表</text></g><path d="M555 660 V755" fill="none" stroke="var(--ink)" stroke-width="1.6" marker-end="url(#a-ink)"/><text x="670" y="715" class="edge-label" text-anchor="middle" style="fill:var(--ink)">按角色读取授权投影</text><path d="M147 638 V755" fill="none" stroke="var(--plum)" stroke-width="1.6" marker-end="url(#a-plum)"/><text x="175" y="715" class="edge-label" text-anchor="middle" style="fill:var(--plum)">派发</text><path d="M75 755 V679 H90 V638" fill="none" stroke="var(--aqua)" stroke-width="1.6" marker-end="url(#a-aqua)" stroke-dasharray="5 4"/><text x="203" y="687" class="edge-label" text-anchor="middle" style="fill:var(--aqua)">返回结果</text><path d="M790 636 H1100 V1020 H790" fill="none" stroke="var(--green)" stroke-width="1.6" marker-end="url(#a-green)"/><text x="946" y="998" class="edge-label" text-anchor="middle" style="fill:var(--green)">全剧主控组织合并与导出</text><g><rect x="320" y="980" width="470" height="78" rx="2" fill="var(--green-tint)" stroke="var(--green-line)"/><text x="555.0" y="1009" class="node-title" text-anchor="middle">单集正式稿 → 全剧合并稿 → Word 稿</text><text x="555.0" y="1033" class="node-sub" text-anchor="middle">仅收录验收通过集 / Word 按范本生成并解析检查</text></g><text x="555" y="1080" class="note" text-anchor="middle">口型与声纹侧表 → 角色卡的自动装配尚待接入，见流程图虚线连接。</text></svg></div>
+<div class="arrow-key"><span><i class="stroke" style="--c:var(--plum)"></i>模型任务派发</span><span><i class="stroke" style="--c:var(--aqua)"></i>写入黑板</span><span><i class="stroke dashed" style="--c:var(--aqua)"></i>结果返回</span><span><i class="stroke dashed" style="--c:var(--forest)"></i>工具调用</span></div></figure>
+<p class="tm-figcaption"><strong>固定工具产证据，子角色返提案，主控审核后更新黑板。</strong>全剧主控按集推进并审核跨集角色变更；各集只继承必要资料，不累积整部剧的对话上下文。</p>
+<div class="notes-grid">
+<aside class="tm-takeaways"><span class="tm-label">写入边界</span><ul><li>固定流程保存素材、镜头、声音与字幕等工具产物。</li><li>单集主控写入本集内容文件，审核新增人物与本集资料。</li><li>全剧主控审核已确认人物的改名、合并与拆分。</li></ul></aside>
+<aside class="tm-takeaways"><span class="tm-label">身份判断边界</span><ul><li>声线标签只在本集内有效，不等于人物身份。</li><li>跨集声纹仅提供候选，原始向量不进入提示词。</li><li>口型和主动说话人分数提供证据，不独立确定画外、心声或设备声音。</li></ul></aside>
+</div>
+<p class="tm-sources"><b>依据：</b><a href="视频逐镜头画声转写PRD.md">PRD §3–5、§7</a>；<a href="../tools/s2s/dispatch/controllers.py">dispatch/controllers.py</a>；<a href="../tools/s2s/dispatch/materials.py">dispatch/materials.py</a>；<a href="../prompts/00-数据约定.md">数据约定 §2–3、§4.15–4.16</a>。</p>
+</section>
+<section id="workflow" data-accent="amber" aria-labelledby="workflow-title">
+<header class="tm-section-head"><span class="tm-num">02 / 处理流程</span><h2 class="section-title" id="workflow-title">先确认画声事实，再成稿与独立验收</h2><p class="tm-dek">一个对白可以跨多个镜头；镜头里出现的人、动作执行者和实际说话人分别确认。</p></header>
+<figure class="tm-fig"><div class="tm-fig-head"><span class="tm-fig-id">FIG. 2.1</span><span class="tm-fig-title">单集生产、返修与全剧交付</span><span class="tm-fig-type">FLOW</span></div><div class="scroll-plate" tabindex="0" role="region" aria-label="处理流程图，可横向滚动"><svg xmlns="http://www.w3.org/2000/svg" class="diagram" viewBox="0 0 1120 1575" role="img" aria-labelledby="flow-title flow-desc"><title id="flow-title">先建立画声证据，再成稿，独立验收后交付</title><desc id="flow-desc">素材先进行镜头与音频处理。人工回听处理不一致句。动作识别后由角色卡确认人物和对白归属，主控处理疑点，成稿交独立验收；有问题按职责返修，最多三轮，仍未解决则人工裁定。通过集经跨集检查后合并导出 Word。</desc><g><rect x="390" y="20" width="340" height="64" rx="2" fill="var(--blue-tint)" stroke="var(--blue-line)"/><text x="560.0" y="49" class="node-title" text-anchor="middle">视频按集入库</text><text x="560.0" y="73" class="node-sub" text-anchor="middle">确认可读取、时长与集号</text></g><path d="M560 84 V130" fill="none" stroke="var(--forest)" stroke-width="1.6" marker-end="url(#a-forest)" stroke-dasharray="5 4"/><rect x="65" y="130" width="990" height="215" rx="2" fill="none" stroke="var(--forest-line)"/><text x="85" y="157" class="group-label" text-anchor="start">固定处理 · 命令行工具按任务组织执行</text><g><rect x="90" y="183" width="285" height="120" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="232.5" y="212" class="node-title" text-anchor="middle">画面路径</text><text x="232.5" y="236" class="node-sub" text-anchor="middle">切镜 → 首中尾 + 补帧</text><text x="232.5" y="257" class="node-sub" text-anchor="middle">镜头表 → 连续镜头分段</text><text x="232.5" y="278" class="node-sub" text-anchor="middle">生成帧图片与片段表</text></g><g><rect x="415" y="183" width="285" height="120" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="557.5" y="212" class="node-title" text-anchor="middle">声音路径</text><text x="557.5" y="236" class="node-sub" text-anchor="middle">Qwen + Grok 两路词时间</text><text x="557.5" y="257" class="node-sub" text-anchor="middle">VAD / 能量 → 共享句界</text><text x="557.5" y="278" class="node-sub" text-anchor="middle">交叉核对 → 声纹聚类</text></g><g><rect x="740" y="183" width="285" height="120" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="882.5" y="212" class="node-title" text-anchor="middle">辅助证据</text><text x="882.5" y="236" class="node-sub" text-anchor="middle">OCR：字幕与画面字卡</text><text x="882.5" y="257" class="node-sub" text-anchor="middle">口型与主动说话人检测</text><text x="882.5" y="278" class="node-sub" text-anchor="middle">跨集声纹候选</text></g><path d="M560 345 V395" fill="none" stroke="var(--aqua)" stroke-width="1.6" marker-end="url(#a-aqua)"/><text x="660" y="376" class="edge-label" text-anchor="middle" style="fill:var(--aqua)">保存时间对应关系</text><g><rect x="360" y="395" width="400" height="74" rx="2" fill="var(--blue-tint)" stroke="var(--blue-line)"/><text x="560.0" y="424" class="node-title" text-anchor="middle">本集证据就绪</text><text x="560.0" y="448" class="node-sub" text-anchor="middle">声音记录 / 镜头表 / 片段表 / 帧</text></g><g><rect x="35" y="395" width="265" height="110" rx="2" fill="var(--grey-tint)" stroke="var(--grey-line)"/><text x="167.5" y="424" class="node-title" text-anchor="middle">人工回听</text><text x="167.5" y="448" class="node-sub" text-anchor="middle">两路不一致 / 仅一路识别出</text><text x="167.5" y="469" class="node-sub" text-anchor="middle">离线页面裁定 → 应用结果</text><text x="167.5" y="490" class="node-sub" text-anchor="middle">未确认句继续保留待核对</text></g><path d="M360 420 H300" fill="none" stroke="var(--indigo)" stroke-width="1.6" marker-end="url(#a-indigo)" stroke-dasharray="2 4"/><text x="330" y="408" class="edge-label" text-anchor="middle" style="fill:var(--indigo)">待听句</text><path d="M300 463 H360" fill="none" stroke="var(--aqua)" stroke-width="1.6" marker-end="url(#a-aqua)" stroke-dasharray="5 4"/><text x="330" y="486" class="edge-label" text-anchor="middle" style="fill:var(--aqua)">写回</text><path d="M560 469 V520" fill="none" stroke="var(--plum)" stroke-width="1.6" marker-end="url(#a-plum)"/><g><rect x="360" y="520" width="400" height="79" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="560.0" y="549" class="node-title" text-anchor="middle">动作识别 · 按片段并行</text><text x="560.0" y="573" class="node-sub" text-anchor="middle">只看画面、人声时间段与人物外观</text><text x="560.0" y="594" class="node-sub" text-anchor="middle">默认 6 镜头 / 软上限 8 / 帧预算 36 + 衔接</text></g><path d="M560 599 V655" fill="none" stroke="var(--plum)" stroke-width="1.6" marker-end="url(#a-plum)"/><text x="690" y="634" class="edge-label" text-anchor="middle" style="fill:var(--plum)">动作 / 画面人物 / 临时人物</text><g><rect x="360" y="655" width="400" height="84" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="560.0" y="684" class="node-title" text-anchor="middle">角色卡 · 人物映射与对白归属</text><text x="560.0" y="708" class="node-sub" text-anchor="middle">画面身份 + 声线 + 口型 + 上下文核对</text><text x="560.0" y="729" class="node-sub" text-anchor="middle">主控审核 → 角色卡 / 归属表</text></g><g><rect x="825" y="655" width="260" height="105" rx="2" fill="var(--panel)" stroke="var(--forest-line)" stroke-dasharray="5 4"/><text x="955.0" y="684" class="node-title" text-anchor="middle">口型 / 声纹 / 跨集候选</text><text x="955.0" y="708" class="node-sub" text-anchor="middle">工具已实现</text><text x="955.0" y="729" class="node-sub" text-anchor="middle">三类侧表的派发装配待接入</text></g><path d="M825 700 H760" fill="none" stroke="var(--grey)" stroke-width="1.6" marker-end="url(#a-grey)" stroke-dasharray="5 4"/><text x="793" y="685" class="edge-label" text-anchor="middle" style="fill:var(--grey)">待接入</text><path d="M560 739 V790" fill="none" stroke="var(--ink)" stroke-width="1.6" marker-end="url(#a-ink)"/><g><rect x="360" y="790" width="400" height="69" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="560.0" y="819" class="node-title" text-anchor="middle">单集主控处理待核对</text><text x="560.0" y="843" class="node-sub" text-anchor="middle">按问题定向复看、回听或补帧</text></g><g><rect x="35" y="780" width="265" height="104" rx="2" fill="var(--forest-tint)" stroke="var(--forest-line)"/><text x="167.5" y="809" class="node-title" text-anchor="middle">按职责补证</text><text x="167.5" y="833" class="node-sub" text-anchor="middle">动作 → 加密取帧后复看</text><text x="167.5" y="854" class="node-sub" text-anchor="middle">归属 → 角色卡核对前后对白</text><text x="167.5" y="875" class="node-sub" text-anchor="middle">台词 → 回听或窗口识别</text></g><path d="M360 814 H300" fill="none" stroke="var(--forest)" stroke-width="1.6" marker-end="url(#a-forest)" stroke-dasharray="5 4"/><path d="M300 848 H360" fill="none" stroke="var(--aqua)" stroke-width="1.6" marker-end="url(#a-aqua)" stroke-dasharray="5 4"/><path d="M560 859 V910" fill="none" stroke="var(--plum)" stroke-width="1.6" marker-end="url(#a-plum)"/><g><rect x="360" y="910" width="400" height="84" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="560.0" y="939" class="node-title" text-anchor="middle">成稿</text><text x="560.0" y="963" class="node-sub" text-anchor="middle">工作稿.md + 对照表.json</text><text x="560.0" y="984" class="node-sub" text-anchor="middle">未解决问题在工作稿中保留标记</text></g><path d="M560 994 V1040" fill="none" stroke="var(--plum)" stroke-width="1.6" marker-end="url(#a-plum)"/><text x="693" y="1019" class="edge-label" text-anchor="middle" style="fill:var(--plum)">正文 / 对照表 / 原始素材</text><g><rect x="360" y="1040" width="400" height="88" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="560.0" y="1069" class="node-title" text-anchor="middle">独立验收</text><text x="560.0" y="1093" class="node-sub" text-anchor="middle">整集文本检查 + 逐片段画面核对</text><text x="560.0" y="1114" class="node-sub" text-anchor="middle">不提供动作记录、归属表或识别推理</text></g><path d="M560 1128 V1165" fill="none" stroke="var(--ink)" stroke-width="1.6" marker-end="url(#a-ink)"/><path d="M560 1165 L660 1215 L560 1265 L460 1215 Z" fill="var(--amber-tint)" stroke="var(--amber-line)"/><text x="560" y="1211" class="decision" text-anchor="middle">审查完整且</text><text x="560" y="1234" class="decision" text-anchor="middle">无未决问题？</text><g><rect x="825" y="1035" width="260" height="100" rx="2" fill="var(--plum-tint)" stroke="var(--plum-line)"/><text x="955.0" y="1064" class="node-title" text-anchor="middle">按问题返修 → 复核</text><text x="955.0" y="1088" class="node-sub" text-anchor="middle">动作 / 归属 / 台词 / 正文</text><text x="955.0" y="1109" class="node-sub" text-anchor="middle">更新对应记录后改稿</text></g><path d="M660 1215 H795 V1085 H825" fill="none" stroke="var(--ink)" stroke-width="1.6" marker-end="url(#a-ink)"/><text x="795" y="1177" class="edge-label" text-anchor="middle" style="fill:var(--ink)">有问题</text><path d="M955 1035 V824 H760" fill="none" stroke="var(--plum)" stroke-width="1.6" marker-end="url(#a-plum)"/><text x="955" y="887" class="edge-label" text-anchor="middle" style="fill:var(--plum)">返修最多 3 轮</text><g><rect x="825" y="1265" width="260" height="100" rx="2" fill="var(--rose-tint)" stroke="var(--rose-line)"/><text x="955.0" y="1294" class="node-title" text-anchor="middle">待人工裁定</text><text x="955.0" y="1318" class="node-sub" text-anchor="middle">3 轮后未解，或素材不足</text><text x="955.0" y="1339" class="node-sub" text-anchor="middle">保留工作稿，不生成正式稿</text><text x="955.0" y="1360" class="node-sub" text-anchor="middle">裁定后复核，通过才交付</text></g><path d="M1085 1090 H1100 V1315 H1085" fill="none" stroke="var(--rose)" stroke-width="1.6" marker-end="url(#a-rose)" stroke-dasharray="5 4"/><text x="954" y="1246" class="edge-label" text-anchor="middle">仍未解决 / 素材不足</text><path d="M560 1265 V1310" fill="none" stroke="var(--green)" stroke-width="1.6" marker-end="url(#a-green)"/><text x="605" y="1293" class="edge-label" text-anchor="middle" style="fill:var(--green)">通过</text><g><rect x="360" y="1310" width="400" height="74" rx="2" fill="var(--green-tint)" stroke="var(--green-line)"/><text x="560.0" y="1339" class="node-title" text-anchor="middle">单集正式稿 + 角色卡总结</text><text x="560.0" y="1363" class="node-sub" text-anchor="middle">写验收报告 / 状态 / 结尾衔接</text></g><path d="M560 1384 V1430" fill="none" stroke="var(--green)" stroke-width="1.6" marker-end="url(#a-green)"/><g><rect x="360" y="1430" width="400" height="108" rx="2" fill="var(--green-tint)" stroke="var(--green-line)"/><text x="560.0" y="1459" class="node-title" text-anchor="middle">全剧合并与交付</text><text x="560.0" y="1483" class="node-sub" text-anchor="middle">逐集继承角色卡 → 跨集一致性检查</text><text x="560.0" y="1504" class="node-sub" text-anchor="middle">跨集问题返回对应集定向复核</text><text x="560.0" y="1525" class="node-sub" text-anchor="middle">合并稿 → 按范本导出 Word → 解析检查</text></g><text x="560" y="1565" class="note" text-anchor="middle">只合并验收通过集；缺失集与待人工裁定集列明，不混入正式正文。</text></svg></div><div class="arrow-key"><span><i class="stroke" style="--c:var(--ink)"></i>流程推进</span><span><i class="stroke dashed" style="--c:var(--grey)"></i>尚待接入</span><span><i class="stroke dashed" style="--c:var(--rose)"></i>问题仍未解决</span></div></figure>
+<p class="tm-figcaption"><strong>正式稿必须通过独立验收；未决问题不能直接进入正式交付。</strong>返修最多 3 轮；人工裁定后仍需复核。全剧合并只收录通过集，跨集变更回到相关单集定向修订。</p>
+<div class="tm-callout"><span class="tm-label">输入事实</span><p>字幕不参与自动切句或两路一致性优先级判断，只提供参考。共享句界来自人声检测、短时能量和两路词级时间；两路一致也不等于已通过验收。</p></div>
+<p class="tm-sources"><b>依据：</b><a href="../prompts/02-单集主控.md">单集主控 §完整转写流程 1–9</a>；<a href="../prompts/01-全剧主控.md">全剧主控 §2–5</a>；<a href="../tools/s2s/asr/crosscheck.py">asr/crosscheck.py</a>；<a href="../tools/s2s/dispatch/roles.py">dispatch/roles.py：review_full</a>；<a href="../TODO.md">TODO.md：T9b 接入待办</a>。</p>
+</section>
+<section id="state" data-accent="amber" aria-labelledby="state-title">
+<header class="tm-section-head"><span class="tm-num">03 / 实现状态</span><h2 class="section-title" id="state-title">模块已具备，完整生产链路仍待验证</h2><p class="tm-dek">固定处理与角色派发已有代码；角色卡接入、主控完整运行和三集交付仍待完成。</p></header>
+<div class="tm-table-wrap"><table class="tm-table"><thead><tr><th scope="col">范围</th><th scope="col">当前已具备</th><th scope="col">待完成</th></tr></thead><tbody>
+<tr><td>固定处理</td><td>切镜取帧、双路识别、音频切句、OCR、回听、声纹与口型工具。</td><td><span class="status-tag">T3h 进行中</span><br>刷新三集声音与黑板，重算侧表并迁移人工裁定。</td></tr>
+<tr><td>内容识别</td><td>动作识别、角色卡、成稿、验收提示词与派发代码；动作识别已有试跑。</td><td><span class="status-tag">T9b / T9c 待试跑</span><br>接入口型记录、声纹聚类与跨集候选；动作识别质量仍有待修问题。</td></tr>
+<tr><td>主控编排</td><td>全剧与单集主控入口、资料隔离、派发记录、完成步骤与片段结果复用。</td><td><span class="status-tag">T8 待验收</span><br>完成单集完整运行与中断后续做验证。</td></tr>
+<tr><td>交付</td><td>正式稿流程规则、Word 导出与解析检查、质量评测工具。</td><td><span class="status-tag">T10 待试跑</span><br>三集从视频到 Word 的完整试跑与质量评测。</td></tr>
+</tbody></table></div>
+<details><summary>模型配置与角色资料边界</summary><div class="tm-table-wrap"><table class="tm-table"><thead><tr><th scope="col">角色 / 工具</th><th scope="col">当前配置或输入</th><th scope="col">限制</th></tr></thead><tbody>
+<tr><td>语音与视觉工具</td><td>Qwen3-ASR 0.6B + Grok / FSMN-VAD / CAM++ / MediaPipe + YuNet + Light-ASD。</td><td>本地检测与候选不能直接当成最终人物身份。</td></tr>
+<tr><td>主控 / 文本角色</td><td><code>openai-codex/gpt-6.1-sol</code>，通过 pi 调用，思考级别 high。</td><td>主控负责调度和审核；内容识别交给对应子角色。</td></tr>
+<tr><td>识图角色</td><td><code>opencode-go/deepseek-v4.1-flash</code>，通过 pi 调用，思考级别 high。角色卡附图时也走识图配置。</td><td>动作识别不拿对白文字；成稿不拿帧图片。</td></tr>
+<tr><td>独立验收</td><td>工作稿、对照表、角色卡、声音、字幕及授权画面；文本整集检查，画面按片段检查。</td><td>不拿动作记录、归属表或其他角色推理；未完整读帧不能宣称全文画面检查完成。</td></tr>
+</tbody></table></div></details>
+<p class="tm-sources"><b>依据：</b><a href="../TODO.md">TODO.md（更新：2026-10-17）</a>；<a href="../config/models.json">config/models.json</a>；<a href="../tools/s2s/dispatch/roles.py">dispatch/roles.py：settings_for / review_full</a>；<a href="../tools/s2s/dispatch/materials.py">dispatch/materials.py：assemble</a>。配置为仓库默认值，运行时可由环境变量覆盖。</p>
+</section>
+</main>
+<footer><div class="shell"><span>SHOT2SCRIPT / 架构与流程</span><span>本地黑板 · 按集识别 · 独立验收</span></div></footer>
+<script>
+const button = document.getElementById('theme');
+const root = document.documentElement;
+function darkNow() { return root.dataset.theme ? root.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
+function syncThemeButton() { const dark = darkNow(); button.textContent = dark ? '切换浅色' : '切换深色'; button.setAttribute('aria-pressed', String(dark)); }
+button.addEventListener('click', () => { root.dataset.theme = darkNow() ? 'light' : 'dark'; syncThemeButton(); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', syncThemeButton);
+syncThemeButton();
+</script>
+</body></html>

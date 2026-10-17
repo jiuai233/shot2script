@@ -93,11 +93,19 @@ def resolve_timing(lanes, voices, samples, rate=16000):
     times, energy = energies(samples, rate)
     pauses = [(left[1], right[0]) for left, right in zip(spans, spans[1:])
               if right[0] - left[1] >= .5 - 1e-8]
-    for lane in result:
+    from ..sub_align import comparison_normalize
+    for index, lane in enumerate(result):
         for word in lane:
             a, b = word["start"], word["end"]
             if not any(min(b, end) > max(a, start) for start, end in spans):
-                word["_untimed"] = True
+                token = comparison_normalize(word["text"])
+                supported = any(min(b, other["end"]) > max(a, other["start"]) and
+                                (token in comparison_normalize(other["text"]) or
+                                 comparison_normalize(other["text"]) in token)
+                                for other in result[1 - index])
+                # 两路同词同时是 VAD 漏检证据，不能把真实台词挪进邻句。
+                if not supported:
+                    word["_untimed"] = True
                 continue
             for left, right in pauses:
                 if a <= left and b >= right:
