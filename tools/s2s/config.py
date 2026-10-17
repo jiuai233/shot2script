@@ -9,7 +9,7 @@ from dotenv import dotenv_values
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONFIG = PROJECT_ROOT / "config" / "models.json"
-PRODUCTION_MODEL = "opencode-go/deepseek-v4.1-flash"
+PRODUCTION_MODEL = "deepseek/deepseek-flash"
 
 
 class ConfigError(ValueError):

@@ -228,3 +228,12 @@ def test_missing_original_words_fails_before_backend_or_audio(tmp_path, monkeypa
     with pytest.raises(ValueError, match='不会重新识别补齐'):
         crosscheck.run('missing.mp4', tmp_path/'E02', primary_path=tmp_path/'声音记录.json', secondary_path=tmp_path/'副路.json')
     assert not (tmp_path/'E02').exists()
+
+
+def test_terminal_punctuation_with_word_gap_starts_new_sentence():
+    samples = np.ones(2 * 16000, dtype=np.float32) * .2
+    turn = [word('不会出事了吧？', .1, 1.0), word('能出', 1.15, 1.3), word('什么事。', 1.3, 1.9)]
+    spans = boundaries([{'起': .05, '止': 1.95}], [turn], samples)
+    assert len(spans) == 2 and spans[0][1] <= 1.15 and spans[1][0] >= 1.0
+    joined = [word('好吧？', .1, 1.0), word('走。', 1.0, 1.5)]
+    assert len(boundaries([{'起': .05, '止': 1.6}], [joined], samples)) == 1

@@ -17,14 +17,14 @@ def table(count):
 def test_partition_sizes(count):
     sizes = partition_sizes(count)
     assert sum(sizes) == count
-    assert all(1 <= size <= 8 for size in sizes)
-    assert all(size == 6 for size in sizes[:-1])
-    if count <= 8:
+    assert all(1 <= size <= 20 for size in sizes)
+    assert all(size == 17 for size in sizes[:-1])
+    if count <= 20:
         assert sizes == ([count] if count else [])
 
 
 
-@pytest.mark.parametrize("count", [0, 1, 6, 10, 11, 12, 17, 21, 41, 100])
+@pytest.mark.parametrize("count", [0, 1, 6, 10, 11, 12, 17, 21, 38, 41, 100])
 def test_segment_coverage(count):
     source = table(count)
     original = copy.deepcopy(source)
@@ -62,7 +62,7 @@ def test_write_segments(tmp_path):
     path.write_text(json.dumps(table(21)), encoding="utf-8")
     result = write_segments(path)
     assert json.loads((tmp_path / "片段表.json").read_text(encoding="utf-8")) == result
-    assert [len(segment["镜头"]) for segment in result["片段"]] == [6, 6, 6, 3]
+    assert [len(segment["镜头"]) for segment in result["片段"]] == [17, 4]
 
 
 @pytest.mark.parametrize("count", [-1, 1.5])

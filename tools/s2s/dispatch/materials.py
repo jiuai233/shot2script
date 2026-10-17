@@ -7,6 +7,7 @@ import re
 
 from s2s.config import PROJECT_ROOT
 from s2s.evidence import evidence_problem
+from s2s.segments import per_second
 from s2s.validate import time_seconds, validate_file
 
 PROMPTS = {'全剧主控': '01-全剧主控.md', '单集主控': '02-单集主控.md',
@@ -23,6 +24,13 @@ MATERIALS = {
            '字幕记录', '角色卡', '待核对', '问题清单:定向改写', '工作稿:定向改写', '对照表:定向改写'),
     '验收': ('工作稿', '对照表', '角色卡', '镜头表', '声音记录', '字幕记录',
            '问题清单:仅复核', '跨集:人物行与首尾场景及结尾衔接', '帧:白名单'),
+}
+# 子角色只附本角色用到的数据约定章节；主控仍读全文。
+CONVENTION = {
+    '动作识别': {'1', '4.1', '4.3', '4.4', '4.6', '4.9', '4.10', '4.11', '4.12'},
+    '角色卡': {'1', '4.1', '4.2', '4.3', '4.4', '4.6', '4.9', '4.12', '4.13', '4.15', '4.16'},
+    '成稿': {'1', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.9'},
+    '验收': {'1', '4.1', '4.2', '4.3', '4.6', '4.7', '4.8', '4.9', '4.10', '4.11'},
 }
 MODES = {'动作识别': ('片段识别', '定向复看'), '角色卡': ('建立', '定向核对', '总结'),
          '成稿': ('全集成稿', '定向改写'), '验收': ('全文审查', '复核', '跨集')}
@@ -47,6 +55,43 @@ def dumps(data) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2)
 
 
+def convention_for(role: str, text: str) -> str:
+    parts = re.split(r'(?m)^(?=#{2,3} \d)', text)
+    kept = [parts[0]]
+    for part in parts[1:]:
+        number = re.match(r'#{2,3} (\d+(?:\.\d+)*)', part).group(1)
+        if number == '4' or number in CONVENTION[role]:
+            kept.append(part)
+    return ''.join(kept).strip()
+
+
+def recheck_shots(mapping: list, shots: list, issues: list, scope: str) -> list:
+    """复核只开放已修正问题及范围所在场景、前后相邻场景的镜头。"""
+    order = list(dict.fromkeys(row['场景'] for row in mapping))
+    by_line = {row['行']: row['场景'] for row in mapping}
+    scenes = set(re.findall(r'场景\d+-\d+', scope))
+    for start, end in re.findall(r'第\s*(\d+)\s*(?:至|到|-)\s*(\d+)\s*行', scope):
+        scenes.update(by_line[n] for n in range(int(start), int(end) + 1) if n in by_line)
+    scenes.update(by_line[int(n)] for n in re.findall(r'第\s*(\d+)\s*行', scope) if int(n) in by_line)
+    for issue in issues:
+        if issue.get('状态') != '已修正':
+            continue
+        position = issue.get('位置', {})
+        if position.get('场景'):
+            scenes.add(position['场景'])
+        if position.get('行') in by_line:
+            scenes.add(by_line[position['行']])
+        scenes.update(row['场景'] for row in mapping if position.get('镜头') in row['镜头'])
+    wanted = set()
+    for index, scene in enumerate(order):
+        if scene in scenes:
+            wanted.update(order[max(index - 1, 0):index + 2])
+    ids = {shot for row in mapping if row['场景'] in wanted for shot in row['镜头']}
+    if not ids:
+        raise ValueError('复核未能从问题清单和范围定位到场景，无法确定需要核对的帧')
+    return [shot for shot in shots if shot['id'] in ids]
+
+
 def frame_path(folder: Path, filename: str) -> Path:
     path = (folder / filename).resolve()
     if path.suffix != '.jpg' or not path.is_relative_to(folder.resolve()):
@@ -61,13 +106,20 @@ class Package:
     prompt: str
     files: list[Path] = field(default_factory=list)
     images: list[Path] = field(default_factory=list)
+    # 与 images 一一对应的“文件名｜镜头｜时间”标注；view_all 时帧随请求一次送入并须全部查看。
+    labels: list[str] = field(default_factory=list)
+    view_all: bool = False
+    # 同一角色各次调用不变的部分（数据约定与返回格式），放在系统提示中以便命中输入缓存。
+    system: str = ''
     segment: dict | None = None
+    # 动作识别实际送出的镜头及帧，校验依据帧时以此为准。
+    shots: list[dict] = field(default_factory=list)
     mode: str = ''
     scope: str = ''
     dense: list[dict] = field(default_factory=list)
 
     def signature(self):
-        return {'模式': self.mode, '范围': self.scope, '提示词': self.prompt,
+        return {'模式': self.mode, '范围': self.scope, '提示词': self.prompt, '系统': self.system,
                 '文件': [[str(p.resolve()), p.stat().st_size, p.stat().st_mtime_ns]
                        for p in [*self.files, *self.images]]}
 
@@ -105,6 +157,7 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
     if mode in ('定向复看', '定向核对', '定向改写', '复核') and not scope:
         raise ValueError('定向任务或复核必须填写 --范围 或变量“范围”')
     selected_shots = shots['镜头']
+    packet.view_all = role == '动作识别' or (role == '验收' and (review_stage == '画面' or mode in ('复核', '跨集')))
     if role == '动作识别' or (role == '验收' and review_stage == '画面'):
         segments = read('片段表.json')['片段']
         segment_id = variables.get('片段号') or (scope if any(s['id'] == scope for s in segments) else None)
@@ -114,6 +167,8 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
         segment = packet.segment = selected[0]
         wanted = {*segment['镜头'], segment['衔接前'], segment['衔接后']}
         selected_shots = [k for k in shots['镜头'] if k['id'] in wanted]
+        if role == '动作识别':
+            selected_shots = packet.shots = [{**k, '帧': per_second(k)} for k in selected_shots]
         values.update({'片段号': segment['id'], '起始镜头': segment['镜头'][0],
                        '结束镜头': segment['镜头'][-1], '起': segment['起'], '止': segment['止']})
         data['片段'] = segment
@@ -201,6 +256,7 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
             if mode == '复核':
                 data['问题清单'] = read('问题清单.json')
                 data['改动对照'] = variables.get('改动对照', [])
+                selected_shots = recheck_shots(data['对照表'], shots['镜头'], data['问题清单'], scope)
             if mode == '跨集':
                 cross = []
                 for number in variables.get('跨集集号', []):
@@ -221,14 +277,19 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
                     ids = {ident for row in load(mapping_path) if row['场景'] in scenes_used for ident in row['镜头']}
                     for shot in load(shot_path)['镜头']:
                         if shot['id'] in ids:
-                            packet.images.extend(frame_path(other / '素材/frames', f['文件']) for f in shot['帧'])
+                            for f in shot['帧']:
+                                packet.images.append(frame_path(other / '素材/frames', f['文件']))
+                                packet.labels.append(f"{f['文件']}｜镜头 {shot['id']}｜{f['时间']}")
                 if not cross:
                     raise ValueError('跨集模式需要变量“跨集集号”数组')
                 data = {'角色卡': roles, '跨集资料': cross}
                 selected_shots = []
     if role != '成稿':
-        packet.images.extend(frame_path(episode / '素材/frames', f['文件'])
-                             for shot in selected_shots for f in shot['帧'])
+        bridges = {packet.segment['衔接前'], packet.segment['衔接后']} if packet.segment else set()
+        for shot in selected_shots:
+            for f in shot['帧']:
+                packet.images.append(frame_path(episode / '素材/frames', f['文件']))
+                packet.labels.append(f"{f['文件']}｜镜头 {shot['id']}｜{f['时间']}" + ('｜衔接参考' if shot['id'] in bridges else ''))
         for filename in variables.get('加密帧索引', []):
             index = (episode / filename).resolve()
             if not index.is_relative_to((episode / '素材/frames_dense').resolve()):
@@ -245,6 +306,7 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
                     raise ValueError('加密帧时间不在本次授权镜头内')
                 path = frame_path(index.parent, frame['文件'])
                 packet.images.append(path)
+                packet.labels.append(f"{frame['文件']}｜镜头 {belongs}｜{frame['时间']}｜加密帧")
                 packet.dense.append({'镜头': belongs, '文件': frame['文件'], '时间': frame['时间'], '路径': str(path)})
         if packet.dense:
             data['加密帧'] = packet.dense
@@ -252,28 +314,32 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
     convention = PROJECT_ROOT / 'prompts/00-数据约定.md'
     packet.files.extend((template, convention))
     packet.prompt = render(template.read_text(encoding='utf-8'), values)
-    packet.prompt += '\n\n## 数据约定\n' + convention.read_text(encoding='utf-8')
     packet.prompt += '\n\n## 本次授权资料\n' + dumps(data)
     if role == '验收' and review_stage:
         if review_stage == '文本':
             packet.prompt += '\n\n## 本次阶段：整集文本检查\n逐行检查全文规范、逐句反查全部声音记录及对白顺序；没有授权帧，不作画面已核对的声明。画面问题由后续逐段独立核对。'
         else:
             packet.prompt += '\n\n## 本次阶段：分段画面核对\n本段：' + dumps(packet.segment)
-            packet.prompt += '\n读取全部授权帧，独立扫描本段人物与物件变化，再对照正文。只报告本段问题，衔接镜头只作参考。正文保留原行号；未写出的关键动作也必须报告。只对本段作结论，不代表整集通过。'
-    if packet.images:
+            packet.prompt += '\n查看全部附图，独立扫描本段人物与物件变化，再对照正文。只报告本段问题，衔接镜头只作参考。正文保留原行号；未写出的关键动作也必须报告。只对本段作结论，不代表整集通过。'
+            packet.prompt += ('\n本阶段只报告需要看画面才能判断的问题：具体动作（无据、漏写、执行者或对象错误）、动作与对白关联、'
+                              '声音与画面归属、画面人物与正文不符。人物名称与代词规范、格式、文学化与镜头语言、对白逐字等纯文本问题'
+                              '已由整集文本检查覆盖，本阶段不重复报告。')
+    if packet.view_all:
+        packet.prompt += ('\n\n## 图片\n本次授权的全部帧附在本条消息末尾，每张图前一行标注文件名、所属镜头和时间；衔接参考帧和加密帧另有标注。'
+                          '\n必须查看全部附图，再输出 JSON。' + ('衔接镜头不输出条目。' if packet.segment else ''))
+    elif packet.images:
         packet.prompt += '\n\n## 图片白名单\n只能用 read 读取这些图片，不允许读取其他文件。\n'
         packet.prompt += '\n'.join(map(str, packet.images))
-        if role in ('动作识别', '验收'):
-            packet.prompt += '\n必须读取本段及衔接镜头的全部帧，再输出 JSON。衔接镜头不输出条目。'
     if role == '成稿':
         packet.prompt += '\n返回一个 JSON 对象：工作稿为完整正文字符串，对照表为数组；定向改写另含改动对照数组。'
     else:
-        packet.prompt += '\n只返回上述格式的一个 JSON 对象，不附推理过程。'
+        packet.prompt += '\n只返回符合系统提示中返回包 Schema 的一个 JSON 对象，不附推理过程。'
     schema = load(Path(__file__).with_name('role_schemas.json'))[role]
     packet.files.append(Path(__file__).with_name('role_schemas.json'))
-    packet.prompt += '\n\n## 返回包精确 Schema\n' + json.dumps(schema, ensure_ascii=False, separators=(',', ':'))
+    packet.system = ('## 数据约定\n' + convention_for(role, convention.read_text(encoding='utf-8'))
+                     + '\n\n## 返回包精确 Schema\n' + json.dumps(schema, ensure_ascii=False, separators=(',', ':')))
     if role == '动作识别':
-        packet.prompt += '\n顶层仅允许：片段、模式、镜头、衔接、加密取帧请求、待核对。临时人物在镜头的画面人物中声明，不另设顶层临时人物字段。'
+        packet.system += '\n顶层仅允许：片段、模式、镜头、衔接、加密取帧请求、待核对。临时人物在镜头的画面人物中声明，不另设顶层临时人物字段。'
     if role == '角色卡':
-        packet.prompt += '\n新人物由主控审核后分配正式角色编号；分配前对白归属保留已有临时人物编号，不引用尚未登记的 C 编号。'
+        packet.system += '\n新人物由主控审核后分配正式角色编号；分配前对白归属保留已有临时人物编号，不引用尚未登记的 C 编号。'
     return packet

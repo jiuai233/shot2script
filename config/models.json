@@ -12,7 +12,7 @@
       }
     },
     "segmentation": {
-      "min_pause": 0.5,
+      "min_pause": 0.3,
       "max_sentence": 6.0,
       "vad": {
         "python_executable": "/Users/jiuai233/prj/shot2script/envs/local-asr/bin/python",
@@ -22,15 +22,15 @@
     }
   },
   "vision": {
-    "runner": "pi",
-    "model": "opencode-go/deepseek-v4.1-flash",
+    "runner": "deepseek",
+    "model": "deepseek/deepseek-flash",
     "thinking": "high",
-    "max_images_per_call": 12
+    "max_images_per_call": 64
   },
   "agents": {
     "default": {
       "runner": "pi",
-      "model": "opencode-go/deepseek-v4.1-flash",
+      "model": "deepseek/deepseek-flash",
       "thinking": "high"
     },
     "全剧主控": {
@@ -49,7 +49,7 @@
       "use": "default"
     },
     "验收": {
-      "use": "vision"
+      "use": "default"
     }
   },
   "runners": {
@@ -58,11 +58,15 @@
     },
     "opencode": {
       "bin": "opencode"
+    },
+    "deepseek": {
+      "base_url": "https://api.deepseek.com",
+      "api_key_env": "DEEPSEEK_API_KEY"
     }
   },
   "allowed_models": {
-    "opencode-go": [
-      "deepseek-v4.1-flash"
+    "deepseek": [
+      "deepseek-flash"
     ]
   },
   "diarize": {

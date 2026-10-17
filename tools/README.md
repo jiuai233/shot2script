@@ -25,7 +25,7 @@ uv run pytest -m "not live"
 - `asr`：`provider=local`，`backends.local.model=qwen3-asr-0.6b`；`segmentation` 设置人声检测和切句参数。
 - `vision`：`runner`、`model`、`thinking`、`max_images_per_call`。
 - `agents`：`default` 为默认角色配置；角色可用 `use: "default"` 或 `use: "vision"` 继承，角色自身字段覆盖继承字段。
-- `runners`：以运行器名为键，`bin` 指向可执行文件名或绝对路径。
+- `runners`：以运行器名为键。`pi`、`opencode` 的 `bin` 指向可执行文件名或绝对路径；`deepseek` 为官方接口直连，`base_url` 为接口地址，`api_key_env` 为密钥所在的环境变量名（默认 `DEEPSEEK_API_KEY`，可写在 `.env`）。
 - `diarize`：CAM++ 本地声纹、相似度阈值和 `lipsync` 约束。
 
 整个配置文件可用 `S2S_CONFIG=/绝对路径/models.json` 替换，模型与 ASR 限制仍然生效。
@@ -34,7 +34,7 @@ uv run pytest -m "not live"
 
 ### 配置覆盖
 
-`S2S_VISION_RUNNER`、`S2S_AGENT_RUNNER` 可修改运行器。模型变量只接受 `opencode-go/deepseek-v4.1-flash`，`S2S_ASR_PROVIDER` 只接受 `local`。
+`S2S_VISION_RUNNER`、`S2S_AGENT_RUNNER` 可修改运行器。模型变量只接受 `deepseek/deepseek-flash`，`S2S_ASR_PROVIDER` 只接受 `local`。
 
 `S2S_AGENT_MODEL`、`S2S_AGENT_RUNNER` 修改 `agents.default`，不影响继承 `vision` 的角色。角色显式字段优先于继承字段，模型仍须通过生产校验。
 
@@ -76,13 +76,14 @@ text = agent.run("动作识别", "核对图片与资料", attachments=["资料.j
 ```python
 from s2s.runners import run
 
-text = run("只回复 OK", images=[], files=[], model="opencode-go/deepseek-v4.1-flash", thinking="high", runner="pi", tools=False, timeout=120)
+text = run("只回复 OK", images=[], files=[], model="deepseek/deepseek-flash", thinking="high", runner="pi", tools=False, timeout=120)
 ```
 
 - pi 使用非交互、无会话、无上下文文件模式，附件通过 `@绝对路径` 传入；默认加 `--no-tools`。
 - opencode 使用 `run --format json`，图片和文件通过 `--file` 传入，返回 JSON 事件中的正文文本。`thinking != "off"` 时传递 `--variant`；具体模型是否支持该级别由提供方决定。
 - opencode 的 `tools=False` 通过进程环境内的 `OPENCODE_CONFIG_CONTENT` 设置 `permission: "deny"`，不修改磁盘上的运行器配置。`tools=True` 使用运行器已有权限，不自动批准请求。
-- 默认超时为 120 秒；超时、非零退出码、空正文和 JSON 事件错误均抛出 `RunnerError`，包含运行器、模型、退出码与 stderr 末尾 20 行。已知环境密钥与代理值在异常中隐藏；不自动重试。
+- deepseek 直连一次请求送入全部图片，`labels` 与图片一一对应，每张图前插一行标注；不开放工具和文件附件。`thinking != "off"` 时开启思考并传 `reasoning_effort`。限流和 5xx 错误最多重试 2 次，超时不重试。`events=True` 时返回 pi 格式的 `message_end` 事件，供派发器统一记录 token 用量。
+- 默认超时为 120 秒；超时、非零退出码、空正文和 JSON 事件错误均抛出 `RunnerError`，包含运行器、模型、退出码与 stderr 末尾 20 行。已知环境密钥与代理值在异常中隐藏；pi 与 opencode 不自动重试。
 
 ### `s2s.asr`：声音识别接口
 
@@ -103,13 +104,13 @@ uv run pytest -m "not live"
 uv run pytest -m live -v -s -x
 ```
 
-实际测试要求 `videos/sample/E01.mp4` 存在，使用 `/opt/homebrew/bin/ffmpeg` 取第 20 秒帧，在 `tmp/T1/` 保存帧与响应。测试依次通过 `S2S_VISION_MODEL` 使用 `opencode-go/deepseek-v4.1-flash`，再调用默认角色卡模型并检查输出为 `OK`。每次模型调用最多 90 秒，不自动重试。
+实际测试要求 `videos/sample/E01.mp4` 存在，使用 `/opt/homebrew/bin/ffmpeg` 取第 20 秒帧，在 `tmp/T1/` 保存帧与响应。测试依次通过 `S2S_VISION_MODEL` 使用 `deepseek/deepseek-flash`，再调用默认角色卡模型并检查输出为 `OK`。每次模型调用最多 90 秒，不自动重试。
 
 未显式传入 `-m` 时，`pytest` 会包含实际调用测试；离线开发使用 `-m "not live"`。
 
 ## 模型允许列表
 
-生产仅接受完整标识 `opencode-go/deepseek-v4.1-flash`。配置文件、环境变量、角色显式覆盖、单次参数、主控和重答路径都执行调用前检查；未知提供方、其他模型和带后缀标识均拒绝。配置中的 `allowed_models` 记录生产接入，不能扩展代码允许范围。失败直接报错，不回退模型。
+生产仅接受完整标识 `deepseek/deepseek-flash`。配置文件、环境变量、角色显式覆盖、单次参数、主控和重答路径都执行调用前检查；未知提供方、其他模型和带后缀标识均拒绝。配置中的 `allowed_models` 记录生产接入，不能扩展代码允许范围。失败直接报错，不回退模型。
 
 ## 工具清单
 
@@ -138,7 +139,7 @@ uv run python tools/dense_frames.py videos/sample/E01.mp4 00:11.0 00:12.0 5 剧�
 uv run python tools/segments.py 剧目/样本剧/E01/镜头表.json
 ```
 
-输出同目录 `片段表.json`，通常每段 6–10 镜头，段间大小之差不超过 1。全片 1–5 个镜头只成一段；11 个镜头合为一段。`衔接前`、`衔接后` 引用邻段边界镜头，首尾为 `null`。
+输出同目录 `片段表.json`。默认每段 17 镜头，余数并入最后一段后不超过 20 时合并，否则单独成段；全片不超过 20 个镜头只成一段。帧预算按动作识别每秒 1 帧实际送出的帧计算，本段超过 40 或含衔接超过 48 时沿镜头边界缩小。`衔接前`、`衔接后` 引用邻段边界镜头，首尾为 `null`。
 
 共享时间接口：
 
@@ -210,7 +211,7 @@ Python 接口：`s2s.docx_build.build_docx(合并稿路径, 输出路径, 标题
 
 ### 视频到剧本的生产入口
 
-前置条件：pi 已授权 DeepSeek，本地 Qwen、VAD、CAM++ 和人脸模型已安装，当前 Python 或 `S2S_LIPSYNC_PYTHON` 指定的解释器中已安装 `mediapipe==1.1.1`。字幕识别使用 macOS Vision，需要 Swift 编译器。生产入口不自动安装组件，不回退到其他生成式模型。
+前置条件：`.env` 已配置 `DEEPSEEK_API_KEY`（直连调用与 pi 共用），本地 Qwen、VAD、CAM++ 和人脸模型已安装，当前 Python 或 `S2S_LIPSYNC_PYTHON` 指定的解释器中已安装 `mediapipe==1.1.1`。字幕识别使用 macOS Vision，需要 Swift 编译器。生产入口不自动安装组件，不回退到其他生成式模型。
 
 ```bash
 # 单集；视频无需预先复制到固定目录
@@ -242,11 +243,11 @@ uv run python tools/dispatch_role.py 动作识别 --集 剧目/样本剧/E01 --�
 
 动作识别变量示例：`{"片段号":"E01-P01"}`。定向复看、定向核对、定向改写及验收复核必须提供 `--范围`。加密复看可加入 `加密帧索引` 数组，值为相对本集的 `素材/frames_dense/<时间段>/帧.json`。跨集验收使用 `--模式 跨集`，变量增加 `跨集集号` 整数数组；复核可通过变量提供 `改动对照`。
 
-子角色只读取授权图片，不能写黑板；派发结果通过校验后保存，由主控审核并合并到公共文件。成稿结果对象包含 `工作稿` 字符串和 `对照表` 数组。角色卡所需的画面人物和口型从 `派发结果/动作识别/*.json` 提取，片段结果应保存在该目录。
+子角色只看授权图片，不能写黑板。动作识别和验收的授权帧随请求一次送入官方接口，每张前标注文件名、镜头和时间；动作识别按整集时间轴每秒 1 帧（取 n+0.5 秒处最近的本地帧）挑选授权帧，没有落到取点的短镜头只送中间 1 帧，依据帧只能引用送出的帧；有画面人物的镜头不少于 8 个且超过七成没有动作条目时判为疑似漏看并重答；复核只送改动场景及前后相邻场景的帧；角色卡经 pi 按白名单读取。派发结果通过校验后保存，由主控审核并合并到公共文件。成稿结果对象包含 `工作稿` 字符串和 `对照表` 数组。角色卡所需的画面人物和口型从 `派发结果/动作识别/*.json` 提取，片段结果应保存在该目录。
 
 已有成功片段结果在输入未变化且重新校验通过时自动复用；定向复看不使用此缓存。派发日志保存至本集 `派发日志.jsonl`，记录 UTC+8 时间、角色、输入、模型、耗时、重答、用量与结果。无法通过校验的返回保存在输出目录的 `校验失败/` 下。
 
-主控会话保存在 `会话/`；重启使用当前状态和文件清单创建新会话，不续接旧对话。`run_episode.py`、`run_series.py` 支持 `--超时`，默认 900 秒；`dispatch_role.py` 默认 180 秒。超时和运行器错误直接退出，只有格式校验错误触发最多两次重答。
+主控会话保存在 `会话/`；重启使用当前状态和文件清单创建新会话，不续接旧对话。`run_episode.py`、`run_series.py` 支持 `--超时`，默认 900 秒；`dispatch_role.py` 默认 300 秒。超时和运行器错误直接退出，只有格式校验错误触发最多两次重答。
 
 ### 口型证据
 
@@ -264,7 +265,7 @@ uv run python tools/asr.py videos/sample/E01.mp4 剧目/示例/E01 \
   --人声段 剧目/示例/E01/素材/人声段.json --原裁定 回听结果.json
 ```
 
-`--words` 可重复传入多个 Qwen 窗口响应，窗口时间转换为本集时间；提供后不调用 ASR。省略 `--人声段` 会执行本地 VAD。切句参数默认为 `--min-pause 0.5`、`--max-sentence 6`。无真实词时间时报错，不从句级时间推造。
+`--words` 可重复传入多个 Qwen 窗口响应，窗口时间转换为本集时间；提供后不调用 ASR。省略 `--人声段` 会执行本地 VAD。切句参数默认为 `--min-pause 0.3`、`--max-sentence 6`；句末标点（。？！）后有真实词间空隙时另起一句，对话换人通常落在这里。无真实词时间时报错，不从句级时间推造。
 
 只有原文、起止和覆盖范围都未变化、且决定来源适用时，才沿用人工裁定；其余在 `素材/回听/裁定迁移.json` 保留待确认记录。旧双路选择不自动确认为单路结果。
 
@@ -326,7 +327,7 @@ uv run python tools/diarize.py <视频> <声音记录.json> <新声纹聚类.jso
 
 ### 派发与分段参数
 
-`dispatch_role.py` 支持 `--提示词 <文件>`，默认正式提示词。全文验收自动执行整集文本检查与分段画面核对；结果旁的 `.coverage.json` 保存逐段实际读帧覆盖，`全文审查完成=false` 时不得标记全文完成。`segments.py` 支持 `--shots-per-segment`、`--soft-limit`、`--frame-budget`、`--context-frame-budget`，默认分别为 6、8、36、48。
+`dispatch_role.py` 支持 `--提示词 <文件>`，默认正式提示词。全文验收自动执行整集文本检查与分段画面核对；结果旁的 `.coverage.json` 保存逐段送入模型的帧，`全文审查完成=false` 时不得标记全文完成。`segments.py` 支持 `--shots-per-segment`、`--soft-limit`、`--frame-budget`、`--context-frame-budget`，默认分别为 17、20、40、48。
 
 ### 旧数据兼容
 

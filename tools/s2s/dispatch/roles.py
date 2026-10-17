@@ -21,9 +21,11 @@ class DispatchError(RuntimeError):
 
 def settings_for(role, package):
     settings = config.get_agent(role)
-    # 有帧时沿用 vision 的图片与运行器参数；所有角色仍只用 DeepSeek。
-    if package.images:
+    # 须全部查看的帧走 vision 直连；其余按白名单由 pi 按需读取。所有角色仍只用 DeepSeek。
+    if package.view_all:
         settings.update(config.get_vision())
+        if settings.get('runner') != 'deepseek':
+            raise ValueError('须全部查看的帧只能由 deepseek 直连送入')
     config.check_model(settings['model'])
     return settings
 
@@ -130,7 +132,7 @@ def finish_review(episode, output, parts, coverage, *, version, simulated=False)
 
 
 def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path,
-             *, mode=None, scope=None, timeout=180, call=None, validator=None, prompt_file=None, _review_stage=None):
+             *, mode=None, scope=None, timeout=300, call=None, validator=None, prompt_file=None, _review_stage=None):
     episode, output = Path(episode).resolve(), Path(output).resolve()
     if role == '验收' and (mode or variables.get('模式', '全文审查')) == '全文审查' and _review_stage is None:
         return review_full(episode, variables, output, timeout=timeout, call=call, validator=validator, prompt_file=prompt_file)
@@ -156,7 +158,8 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
         validate = validator or validate_result
         prompt = package.prompt
         if result is None:
-            with pi_options(settings, read_paths=package.images) as options:
+            direct = settings.get('runner') == 'deepseek'
+            with pi_options(settings, read_paths=() if direct else package.images) as options:
                 for attempt in range(3):
                     retries = attempt
                     attempt_started = time.monotonic()
@@ -164,14 +167,17 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                     row.setdefault('尝试记录', []).append(attempt_row)
                     try:
                         config.check_model(settings['model'])
-                        raw = (call or agent.run)(role, prompt, attachments=[], images=[],
+                        raw = (call or agent.run)(role, prompt, attachments=[],
+                                               images=package.images if direct else [],
+                                               labels=package.labels if direct else None,
+                                               system=agent.ROLE_SYSTEM[role] + '\n\n' + package.system,
                                                **{**settings, **options, 'timeout': timeout})
                         response = decode_response(raw)
                     finally:
                         attempt_row['耗时秒'] = round(time.monotonic() - attempt_started, 3)
-                    read_paths = {str(Path(p).resolve()) for p in response.reads}
                     authorized = {str(p) for p in package.images}
-                    read_paths &= authorized
+                    # 直连时全部帧随请求送入；pi 按需读取时以实际 read 记录为准。
+                    read_paths = set(authorized) if direct else {str(Path(p).resolve()) for p in response.reads} & authorized
                     missing = authorized - read_paths
                     attempt_row.update({'读取图片数': len(read_paths), '已读帧': sorted(read_paths),
                                         '授权帧数': len(authorized), '未读帧': sorted(missing),
@@ -182,13 +188,7 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                     try:
                         result = extract_result(role, response.text)
                         errors = validate(role, result, episode, package)
-                        coverage_complete = not missing
-                        if call is None and role in ('动作识别', '验收') and missing:
-                            if attempt == 2 and role == '验收' and not errors:
-                                result['结论'] = '不通过'
-                                row['画面状态'] = '画面未完整审查'
-                            else:
-                                errors.append('尚未使用 read 读取全部帧：' + '、'.join(sorted(missing)))
+                        coverage_complete = not missing or not package.view_all
                     except (ValueError, TypeError, KeyError) as exc:
                         errors = [str(exc)]
                     if not errors:
@@ -202,7 +202,9 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                         raise DispatchError('格式校验失败，已重答 2 次：' + '; '.join(errors))
                     prompt = (package.prompt + '\n\n## 上次返回\n' + response.text
                               + '\n\n## 校验错误\n' + dumps(errors)
-                              + '\n请修正这些错误，重新返回完整结果，不省略其他字段。每次重答都是新调用，必须重新读取全部授权帧，不能只补读遗漏帧。')
+                              + '\n请修正这些错误，重新返回完整结果，不省略其他字段。'
+                              + ('每次重答都是新调用，必须重新查看全部附图。' if direct
+                                 else '每次重答都是新调用，必须重新读取全部授权帧，不能只补读遗漏帧。'))
         output.parent.mkdir(parents=True, exist_ok=True)
         # 主控决定目标路径；先校验成功才替换旧结果。
         temporary = output.with_name(output.name + '.new')
@@ -232,7 +234,7 @@ def main():
     parser.add_argument('--范围')
     parser.add_argument('--输出', required=True)
     parser.add_argument('--提示词', help='对比试验提示词文件，默认使用正式提示词')
-    parser.add_argument('--超时', type=float, default=180)
+    parser.add_argument('--超时', type=float, default=300)
     args = parser.parse_args()
     try:
         variables = load(Path(args.变量))

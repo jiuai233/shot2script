@@ -35,8 +35,8 @@ def test_direct_override_refused_before_launch(monkeypatch, entry, model):
 def test_custom_config_cannot_widen_allowlist(tmp_path, monkeypatch, section):
     data = json.loads(config.DEFAULT_CONFIG.read_text())
     target = data["vision"] if section == "vision" else data["agents"][section]
-    target["model"] = "opencode-go/glm-5.3-flash"
-    data["allowed_models"]["opencode-go"].append("glm-5.3-flash")
+    target["model"] = "deepseek/deepseek-v4-pro"
+    data["allowed_models"]["deepseek"].append("deepseek-v4-pro")
     path = tmp_path / "config.json"
     path.write_text(json.dumps(data))
     monkeypatch.setattr(config, "get_environment", lambda: {"S2S_CONFIG": str(path)})

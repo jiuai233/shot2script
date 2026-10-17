@@ -42,16 +42,16 @@
 | 人声检测 | 本地 FSMN-VAD |
 | 声纹 | 本地 CAM++（sherpa-onnx） |
 | 口型 | 本地 MediaPipe、YuNet、Light-ASD |
-| 识图 | pi 调用 `opencode-go/deepseek-v4.1-flash`，思考级别 high |
-| 角色 agent | pi 调用 `opencode-go/deepseek-v4.1-flash`，思考级别 high |
+| 识图 | `deepseek/deepseek-flash`，思考级别 high。动作识别和验收的读图直接调用 DeepSeek 官方接口，授权帧一次送入并逐张标注（复核只送改动场景及相邻场景的帧）；角色卡经 pi 按白名单读帧 |
+| 角色 agent | pi 调用 `deepseek/deepseek-flash`，思考级别 high |
 
-所有生产生成式调用只允许 `opencode-go/deepseek-v4.1-flash`，默认值、角色覆盖、环境变量和重答均在调用前校验，不回退其他模型。字幕只作人工参考。实现及离线/真实验收状态见 `TODO.md`，真实识别质量须单独验收。
+所有生产生成式调用只允许 `deepseek/deepseek-flash`，默认值、角色覆盖、环境变量和重答均在调用前校验，不回退其他模型。字幕只作人工参考。实现及离线/真实验收状态见 `TODO.md`，真实识别质量须单独验收。
 
 ## 开始使用
 
 ```bash
 uv sync                                  # 主环境
-cp .env.example .env                     # 按需填写本地路径与配置覆盖；pi 需已授权 DeepSeek
+cp .env.example .env                     # 填写 DEEPSEEK_API_KEY 及按需的本地路径与配置覆盖
 uv run pytest -m "not live"              # 单元测试
 ```
 

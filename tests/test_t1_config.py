@@ -26,18 +26,20 @@ def custom_config(tmp_path, monkeypatch):
 def test_defaults():
     assert config.get_asr_backend()["provider"] == "local"
     assert config.get_asr_backend()["model"] == "qwen3-asr-0.6b"
-    assert config.get_vision()["model"] == "opencode-go/deepseek-v4.1-flash"
+    assert config.get_vision()["model"] == "deepseek/deepseek-flash"
     assert config.get_agent("角色卡")["thinking"] == "high"
     assert config.get_agent("动作识别") == config.get_vision()
-    assert config.get_agent("验收") == config.get_vision()
+    assert config.get_vision()["runner"] == "deepseek"
+    assert config.get_agent("验收")["runner"] == "pi"
     assert config.get_runner_config("pi") == {"bin": "pi"}
+    assert config.get_runner_config("deepseek")["api_key_env"] == "DEEPSEEK_API_KEY"
 
 
 @pytest.mark.parametrize("variable,value,reader,field", [
     ("S2S_ASR_PROVIDER", "local", config.get_asr_backend, "provider"),
-    ("S2S_VISION_MODEL", "opencode-go/deepseek-v4.1-flash", config.get_vision, "model"),
+    ("S2S_VISION_MODEL", "deepseek/deepseek-flash", config.get_vision, "model"),
     ("S2S_VISION_RUNNER", "opencode", config.get_vision, "runner"),
-    ("S2S_AGENT_MODEL", "opencode-go/deepseek-v4.1-flash", lambda: config.get_agent("角色卡"), "model"),
+    ("S2S_AGENT_MODEL", "deepseek/deepseek-flash", lambda: config.get_agent("角色卡"), "model"),
     ("S2S_AGENT_RUNNER", "opencode", lambda: config.get_agent("角色卡"), "runner"),
 ])
 def test_environment_override(monkeypatch, variable, value, reader, field):
@@ -46,44 +48,44 @@ def test_environment_override(monkeypatch, variable, value, reader, field):
 
 
 def test_vision_inheritance_tracks_environment(monkeypatch):
-    monkeypatch.setenv("S2S_VISION_MODEL", "opencode-go/deepseek-v4.1-flash")
-    assert config.get_agent("动作识别")["model"] == "opencode-go/deepseek-v4.1-flash"
-    monkeypatch.setenv("S2S_AGENT_MODEL", "opencode-go/deepseek-v4.1-flash")
-    assert config.get_agent("验收")["model"] == "opencode-go/deepseek-v4.1-flash"
-    assert config.get_agent("角色卡")["model"] == "opencode-go/deepseek-v4.1-flash"
+    monkeypatch.setenv("S2S_VISION_MODEL", "deepseek/deepseek-flash")
+    assert config.get_agent("动作识别")["model"] == "deepseek/deepseek-flash"
+    monkeypatch.setenv("S2S_AGENT_MODEL", "deepseek/deepseek-flash")
+    assert config.get_agent("验收")["model"] == "deepseek/deepseek-flash"
+    assert config.get_agent("角色卡")["model"] == "deepseek/deepseek-flash"
 
 
 def test_role_override_wins_over_inherited_fields(custom_config, monkeypatch):
     data, path = custom_config
-    data["agents"]["动作识别"].update(model="opencode-go/deepseek-v4.1-flash", thinking="low")
+    data["agents"]["动作识别"].update(model="deepseek/deepseek-flash", thinking="low")
     path.write_text(json.dumps(data), encoding="utf-8")
-    monkeypatch.setenv("S2S_VISION_MODEL", "opencode-go/deepseek-v4.1-flash")
+    monkeypatch.setenv("S2S_VISION_MODEL", "deepseek/deepseek-flash")
     result = config.get_agent("动作识别")
-    assert result["model"] == "opencode-go/deepseek-v4.1-flash"
+    assert result["model"] == "deepseek/deepseek-flash"
     assert result["thinking"] == "low"
-    assert result["max_images_per_call"] == 12
+    assert result["max_images_per_call"] == 64
     assert "use" not in result
 
 
 def test_whole_config_switch(custom_config):
     data, path = custom_config
-    data["vision"]["model"] = "opencode-go/deepseek-v4.1-flash"
+    data["vision"]["model"] = "deepseek/deepseek-flash"
     data["runners"]["pi"]["bin"] = "/custom/pi"
     path.write_text(json.dumps(data), encoding="utf-8")
-    assert config.get_vision()["model"] == "opencode-go/deepseek-v4.1-flash"
+    assert config.get_vision()["model"] == "deepseek/deepseek-flash"
     assert config.get_runner_config("pi")["bin"] == "/custom/pi"
 
 
 def test_config_reads_fresh_objects():
     result = config.get_vision()
     result["model"] = "modified"
-    assert config.get_vision()["model"] == "opencode-go/deepseek-v4.1-flash"
+    assert config.get_vision()["model"] == "deepseek/deepseek-flash"
 
 
 def test_empty_overrides_use_defaults(monkeypatch):
     monkeypatch.setenv("S2S_CONFIG", "")
     monkeypatch.setenv("S2S_VISION_MODEL", "")
-    assert config.get_vision()["model"] == "opencode-go/deepseek-v4.1-flash"
+    assert config.get_vision()["model"] == "deepseek/deepseek-flash"
 
 
 @pytest.mark.parametrize("reader", [lambda: config.get_agent("不存在"), lambda: config.get_asr_backend("不存在"), lambda: config.get_runner_config("不存在")])
@@ -121,9 +123,9 @@ def test_disallowed_model_rejected():
         config.check_model("opencode-go/kimi-k3:high")
     with pytest.raises(config.ConfigError):
         config.check_model("opencode-go/glm-5.3")
-    config.check_model("opencode-go/deepseek-v4.1-flash")
+    config.check_model("deepseek/deepseek-flash")
     with pytest.raises(config.ConfigError):
-        config.check_model("opencode-go/deepseek-v4.1-flash:high")
+        config.check_model("deepseek/deepseek-flash:high")
     with pytest.raises(config.ConfigError):
         config.check_model("openai-codex/gpt-6.1-sol")
 

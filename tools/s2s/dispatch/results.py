@@ -11,6 +11,10 @@ from s2s.names import name_errors
 from s2s.quality import check_script
 from .materials import dumps, load
 
+# 实测正常片段中有人物而无动作的镜头最多约一半，整段漏看的片段超过八成。
+IDLE_MIN_SHOTS = 8
+IDLE_MAX_SHARE = 0.7
+
 
 def extract_json(text: str):
     text = text.strip()
@@ -109,6 +113,7 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
             if [s['镜头'] for s in data['镜头']] != segment['镜头']:
                 errors.append('输出镜头必须按顺序覆盖本段一次，不含衔接镜头')
             shot_map = {s['id']: s for s in load(episode / '镜头表.json')['镜头']}
+            sent = {s['id']: s for s in package.shots}
             known = {r['id'] for r in load(context / '角色卡.json')}
             declared = {p['人物'] for s in data['镜头'] for p in s['画面人物']}
             for person in declared - known:
@@ -123,7 +128,7 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
                     continue
                 if (shot['起'], shot['止']) != (source['起'], source['止']):
                     errors.append(shot['镜头'] + ' 起止与镜头表不一致')
-                frames = {f['文件'] for f in source['帧']}
+                frames = {f['文件'] for f in sent.get(shot['镜头'], source)['帧']}
                 frames.update(f['文件'] for f in package.dense if f['镜头'] == shot['镜头'])
                 for entry in [*shot['动作'], *shot['神态']]:
                     if not set(entry['依据帧']).issubset(frames):
@@ -144,6 +149,12 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
                     people = [p['人物'] for p in mouth['人物状态']]
                     if len(people) != len(set(people)):
                         errors.append('同一人声时间段的嘴部状态人物重复')
+            # 大段曾出现整段只写“无明显动作”的漏看；有人物镜头较多且大半无动作时要求重看。
+            people = [s for s in data['镜头'] if s['画面人物']]
+            idle = sum(1 for s in people if not s['动作'])
+            if len(people) >= IDLE_MIN_SHOTS and idle > len(people) * IDLE_MAX_SHARE:
+                errors.append(f'有画面人物的 {len(people)} 个镜头中 {idle} 个没有动作条目，疑似漏看；'
+                              '逐镜头重新查看，只写画面中看得到的动作，确实没有动作的镜头保持为空')
             temporary = []
             for person in sorted(declared - known):
                 temporary.append({'id': person, '片段': segment['id'],

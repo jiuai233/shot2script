@@ -152,6 +152,18 @@ def boundaries(voices, lanes, samples, *, rate=16000, min_pause=.5, max_sentence
             groups.append([a, b])
         else:
             groups[-1][1] = max(b, groups[-1][1])
+    # 对话换人常不足停顿阈值；句末标点后有真实词间空隙时另起一句。
+    ordered = sorted(words, key=lambda w: w["start"])
+    terminal = [(w["end"], nxt["start"]) for w, nxt in zip(ordered, ordered[1:])
+                if re.search(r"[。！？!?]$", w["text"]) and nxt["start"] - w["end"] >= .05 - 1e-8]
+    split = []
+    for a, b in groups:
+        for p, q in terminal:
+            if a < p and q < b:
+                split.append([a, p])
+                a = q
+        split.append([a, b])
+    groups = split
     result = []
     for index, (a, b) in enumerate(groups):
         # 句外最多保留 0.2 秒静音；长空镜不塞进一条台词里。
