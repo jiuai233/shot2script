@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "角色卡",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^C[0-9]{3,}$"
+      },
+      "名称": {
+        "type": "string"
+      },
+      "名称类型": {
+        "enum": [
+          "姓名",
+          "描述名"
+        ]
+      },
+      "状态": {
+        "enum": [
+          "已确认",
+          "待确认"
+        ]
+      },
+      "别名称呼": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "外观": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "集": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "描述": {
+              "type": "string"
+            },
+            "参考帧": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "集",
+            "描述",
+            "参考帧"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "声线": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "集": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "标签": {
+              "type": "string",
+              "pattern": "^E[0-9]{2,}-V[1-9][0-9]*$"
+            },
+            "特征": {
+              "type": "string"
+            },
+            "依据": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "集",
+            "标签",
+            "特征",
+            "依据"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "关系": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "对象": {
+              "type": "string",
+              "pattern": "^C[0-9]{3,}$"
+            },
+            "关系": {
+              "type": "string"
+            },
+            "依据": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "对象",
+            "关系",
+            "依据"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "身份依据": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "性格总结": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "集": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "内容": {
+              "type": "string"
+            },
+            "事件依据": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "集",
+            "内容",
+            "事件依据"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "首次出场": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+      },
+      "待核对": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "required": [
+      "id",
+      "名称",
+      "名称类型",
+      "状态",
+      "别名称呼",
+      "外观",
+      "声线",
+      "关系",
+      "身份依据",
+      "性格总结",
+      "首次出场",
+      "待核对"
+    ],
+    "additionalProperties": false
+  }
+}

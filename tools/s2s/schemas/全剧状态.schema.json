@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "全剧状态",
+  "type": "object",
+  "properties": {
+    "状态": {
+      "enum": [
+        "进行中",
+        "验收中",
+        "返修中",
+        "验收通过",
+        "待人工裁定"
+      ]
+    },
+    "集": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "集": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "状态": {
+            "enum": [
+              "进行中",
+              "验收中",
+              "返修中",
+              "验收通过",
+              "待人工裁定"
+            ]
+          }
+        },
+        "required": [
+          "集",
+          "状态"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "状态",
+    "集"
+  ],
+  "additionalProperties": false
+}

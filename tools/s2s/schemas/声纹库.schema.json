@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "声纹库",
+  "type": "object",
+  "properties": {
+    "角色": {
+      "type": "string",
+      "pattern": "^C[0-9]{3,}$"
+    },
+    "模型": {
+      "enum": [
+        "campp",
+        "resnet34"
+      ]
+    },
+    "版本": {
+      "type": "string"
+    },
+    "预处理": {
+      "type": "string"
+    },
+    "向量": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "句数": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "来源集": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}$"
+      },
+      "uniqueItems": true
+    },
+    "来源": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "集": {
+            "type": "string",
+            "pattern": "^E[0-9]{2,}$"
+          },
+          "句数": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "均值": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "集",
+          "句数",
+          "均值"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "角色",
+    "模型",
+    "版本",
+    "预处理",
+    "向量",
+    "句数",
+    "来源集",
+    "来源"
+  ],
+  "additionalProperties": false
+}

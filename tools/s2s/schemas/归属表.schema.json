@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "归属表",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "句": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"
+      },
+      "说话人": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^C[0-9]{3,}$"
+          },
+          {
+            "type": "string",
+            "pattern": "^E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*$"
+          }
+        ]
+      },
+      "形态": {
+        "enum": [
+          "画内",
+          "画外",
+          "心声",
+          "设备"
+        ]
+      },
+      "依据": {
+        "type": "string"
+      },
+      "确定度": {
+        "enum": [
+          "确认",
+          "存疑"
+        ]
+      }
+    },
+    "required": [
+      "句",
+      "说话人",
+      "形态",
+      "依据",
+      "确定度"
+    ],
+    "additionalProperties": false
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "角色变更申请",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-R[0-9]{2,}$"
+      },
+      "类型": {
+        "enum": [
+          "合并",
+          "拆分",
+          "改名"
+        ]
+      },
+      "涉及角色": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^C[0-9]{3,}$"
+        }
+      },
+      "内容": {
+        "type": "string"
+      },
+      "依据": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "涉及集": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "提出集": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "状态": {
+        "enum": [
+          "待审核",
+          "同意",
+          "驳回",
+          "待确认"
+        ]
+      },
+      "审核结论": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "required": [
+      "id",
+      "类型",
+      "涉及角色",
+      "内容",
+      "依据",
+      "涉及集",
+      "提出集",
+      "状态",
+      "审核结论"
+    ],
+    "additionalProperties": false
+  }
+}

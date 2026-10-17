@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "声纹候选",
+  "type": "object",
+  "properties": {
+    "集": {
+      "type": "string",
+      "pattern": "^E[0-9]{2,}$"
+    },
+    "模型": {
+      "enum": [
+        "campp",
+        "resnet34"
+      ]
+    },
+    "版本": {
+      "type": "string"
+    },
+    "预处理": {
+      "type": "string"
+    },
+    "仅供参考": {
+      "const": true
+    },
+    "声线": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "声线": {
+            "type": "string",
+            "pattern": "^E[0-9]{2,}-V[1-9][0-9]*$"
+          },
+          "句数": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "候选": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "角色": {
+                  "type": "string",
+                  "pattern": "^C[0-9]{3,}$"
+                },
+                "相似度": {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                }
+              },
+              "required": [
+                "角色",
+                "相似度"
+              ],
+              "additionalProperties": false
+            },
+            "maxItems": 3
+          }
+        },
+        "required": [
+          "声线",
+          "句数",
+          "候选"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "集",
+    "模型",
+    "版本",
+    "预处理",
+    "仅供参考",
+    "声线"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "临时人物",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*$"
+      },
+      "片段": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-P[0-9]{2,}$"
+      },
+      "外观": {
+        "type": "string"
+      },
+      "出现镜头": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+        }
+      },
+      "映射": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^C[0-9]{3,}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "映射依据": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "片段",
+      "外观",
+      "出现镜头",
+      "映射",
+      "映射依据"
+    ],
+    "additionalProperties": false
+  }
+}

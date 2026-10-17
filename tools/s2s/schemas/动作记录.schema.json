@@ -1,0 +1,143 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "动作记录",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "id": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-A[0-9]{4,}$"
+      },
+      "镜头": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+      },
+      "起": {
+        "type": "string",
+        "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+      },
+      "止": {
+        "type": "string",
+        "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+      },
+      "执行者": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^C[0-9]{3,}$"
+          },
+          {
+            "type": "string",
+            "pattern": "^E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*$"
+          }
+        ]
+      },
+      "动作": {
+        "type": "string"
+      },
+      "对象": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "物件": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "结果": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "关键": {
+        "type": "boolean"
+      },
+      "关键类别": {
+        "anyOf": [
+          {
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "依据帧": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      },
+      "确定度": {
+        "enum": [
+          "确认",
+          "存疑"
+        ]
+      },
+      "说明": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "镜头",
+      "起",
+      "止",
+      "执行者",
+      "动作",
+      "对象",
+      "物件",
+      "结果",
+      "关键",
+      "关键类别",
+      "依据帧",
+      "确定度",
+      "说明"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+      {
+        "if": {
+          "properties": {
+            "关键": {
+              "const": true
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "关键类别": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            }
+          }
+        },
+        "else": {
+          "properties": {
+            "关键类别": {
+              "type": "null"
+            }
+          }
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,103 @@
+{
+  "asr": {
+    "provider": "local",
+    "backends": {
+      "grok": {
+        "api_base": "https://api.x.ai/v1",
+        "model": "grok-voice-transcribe-2.0",
+        "key_env": "XAI_API_KEY",
+        "format": false,
+        "pause_seconds": 0.35,
+        "max_sentence_seconds": 6.0,
+        "min_speaker_seconds": 0.3
+      },
+      "doubao": {
+        "api_base": "https://ark.cn-beijing.volces.com/api/v3",
+        "model": "doubao-seed-2-0-lite-260428",
+        "key_env": "ARK_DOUBAO_API_KEY",
+        "proxy_env": "ARK_DOUBAO_PROXY"
+      },
+      "local": {
+        "model": "qwen3-asr-0.6b",
+        "python_executable": "/Users/jiuai233/prj/shot2script/envs/local-asr/bin/python",
+        "hotwords": [],
+        "pause_seconds": 0.35,
+        "max_sentence_seconds": 6,
+        "timeout_seconds": 300
+      }
+    },
+    "cross_check": {
+      "enabled": true,
+      "primary": "local",
+      "secondary": "grok"
+    },
+    "segmentation": {
+      "min_pause": 0.5,
+      "max_sentence": 6.0,
+      "vad": {
+        "python_executable": "/Users/jiuai233/prj/shot2script/envs/local-asr/bin/python",
+        "model_path": "/Users/jiuai233/prj/shot2script/models/asr/fsmn-vad",
+        "timeout_seconds": 60
+      }
+    }
+  },
+  "vision": {
+    "runner": "pi",
+    "model": "opencode-go/deepseek-v4.1-flash",
+    "thinking": "high",
+    "max_images_per_call": 12
+  },
+  "agents": {
+    "default": {
+      "runner": "pi",
+      "model": "openai-codex/gpt-6.1-sol",
+      "thinking": "high"
+    },
+    "全剧主控": {
+      "use": "default"
+    },
+    "单集主控": {
+      "use": "default"
+    },
+    "角色卡": {
+      "use": "default"
+    },
+    "动作识别": {
+      "use": "vision"
+    },
+    "成稿": {
+      "use": "default"
+    },
+    "验收": {
+      "use": "vision"
+    }
+  },
+  "runners": {
+    "pi": {
+      "bin": "pi"
+    },
+    "opencode": {
+      "bin": "opencode"
+    }
+  },
+  "allowed_models": {
+    "opencode-go": [
+      "deepseek-v4.1-flash",
+      "glm-5.3-flash"
+    ]
+  },
+  "diarize": {
+    "enabled": true,
+    "model": "campp",
+    "threshold": 0.6,
+    "constraints": [
+      "grok",
+      "lipsync",
+      "max_speakers"
+    ],
+    "grok_weight": 0.15,
+    "grok_purity": 0.7,
+    "grok_min_similarity": 0.2,
+    "threads": 2
+  }
+}

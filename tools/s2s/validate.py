@@ -1,0 +1,335 @@
+"""JSON Schema 与跨文件编号、时间校验。"""
+
+import argparse
+import json
+from pathlib import Path
+import re
+
+from jsonschema import Draft202012Validator
+
+SCHEMA_DIR = Path(__file__).with_name('schemas')
+TYPE_ALIASES = {'roles': '角色卡', 'shots': '镜头表', 'segments': '片段表',
+    'sound': '声音记录', 'subtitles': '字幕记录', 'actions': '动作记录',
+    'attribution': '归属表', 'pending': '待核对', 'issues': '问题清单',
+    'mapping': '对照表', 'state': '状态', 'series_state': '全剧状态',
+    'temporary_people': '临时人物', 'role_changes': '角色变更申请', 'dense_frames': '加密帧索引',
+    '帧': '加密帧索引'}
+TIME_RE = re.compile(r'^[0-9]{2}:[0-5][0-9]\.[0-9]$')
+ID_RE = re.compile(r'^E([0-9]{2,})-([SKAQPVTR])([0-9]+)(?:-T([1-9][0-9]*))?$')
+ID_FIELDS = {'id', '标签', '声线', '镜头', '句', '动作', '执行者', '对象', '说话人',
+             '相关人物', '衔接前', '衔接后', '首次出场', '未决问题', '本集新增人物',
+             '片段', '出现镜头', '映射', '涉及角色'}
+
+
+def time_seconds(value: str) -> float:
+    if not isinstance(value, str) or not TIME_RE.fullmatch(value):
+        raise ValueError(f'时间须为 MM:SS.s：{value}')
+    return int(value[:2]) * 60 + float(value[3:])
+
+
+def read_json(path: str | Path):
+    return json.loads(Path(path).read_text(encoding='utf-8'))
+
+
+def _location(parts) -> str:
+    return '$' + ''.join(f'[{part}]' if isinstance(part, int) else f'.{part}' for part in parts)
+
+
+def _episode_from_path(path: Path) -> int | None:
+    for parent in path.parents:
+        if re.fullmatch(r'E[0-9]{2,}', parent.name):
+            return int(parent.name[1:])
+    return None
+
+
+def _walk(value, path=()):
+    yield path, value
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield from _walk(child, (*path, key))
+    elif isinstance(value, list):
+        for i, child in enumerate(value):
+            yield from _walk(child, (*path, i))
+
+
+def _items(data, field=None):
+    if field:
+        data = data.get(field, []) if isinstance(data, dict) else []
+    return data if isinstance(data, list) else []
+
+
+def _check_frames(record, path, fail, dense=False):
+    start, end = time_seconds(record['起']), time_seconds(record['止'])
+    previous = None
+    for i, frame in enumerate(record['帧']):
+        frame_path = (*path, '帧', i)
+        moment = time_seconds(frame['时间'])
+        if not start <= moment <= end:
+            fail((*frame_path, '时间'), '帧时间超出起止范围')
+        if previous is not None and moment < previous:
+            fail((*frame_path, '时间'), '帧未按时间升序排列')
+        previous = moment
+        if dense:
+            expected = f't{frame["时间"].replace(":", "-")}.jpg'
+            if frame['文件'] != expected:
+                fail((*frame_path, '文件'), '加密帧文件名与时间不一致')
+        elif frame['文件'].split('_')[0] != record['id'].split('-')[-1]:
+            fail((*frame_path, '文件'), '帧文件名与镜头编号不一致')
+
+
+def _check_shots(data, fail):
+    shots = data['镜头']
+    if not shots:
+        if data['时长'] != '00:00.0':
+            fail(('镜头',), '非零时长的镜头表不能为空')
+        return
+    if shots[0]['起'] != '00:00.0':
+        fail(('镜头', 0, '起'), '首镜头必须从 00:00.0 开始')
+    if shots[-1]['止'] != data['时长']:
+        fail(('镜头', len(shots) - 1, '止'), '末镜头结束时间必须等于时长')
+    for i, shot in enumerate(shots):
+        if i and shot['起'] != shots[i - 1]['止']:
+            fail(('镜头', i, '起'), '相邻镜头必须首尾相接')
+        _check_frames(shot, ('镜头', i), fail)
+
+
+def _check_segments(data, source, fail):
+    shots, segments = source['镜头'], data['片段']
+    shot_ids = [shot['id'] for shot in shots]
+    if [ident for segment in segments for ident in segment['镜头']] != shot_ids:
+        fail(('片段',), '全部片段必须按顺序恰好覆盖镜头表一次')
+    by_id = {shot['id']: shot for shot in shots}
+    for i, segment in enumerate(segments):
+        ids = segment['镜头']
+        if ids[0] in by_id and segment['起'] != by_id[ids[0]]['起']:
+            fail(('片段', i, '起'), '片段起点必须等于首镜头起点')
+        if ids[-1] in by_id and segment['止'] != by_id[ids[-1]]['止']:
+            fail(('片段', i, '止'), '片段终点必须等于末镜头终点')
+        before = segments[i - 1]['镜头'][-1] if i else None
+        after = segments[i + 1]['镜头'][0] if i + 1 < len(segments) else None
+        for field, expected in (('衔接前', before), ('衔接后', after)):
+            if segment[field] != expected:
+                fail(('片段', i, field), f'{field}必须是相邻片段边界镜头：{expected}')
+
+
+def validate_file(file: str | Path, data_type: str | None = None) -> dict:
+    file = Path(file)
+    errors = []
+
+    def fail(path, message):
+        errors.append({'位置': _location(path), '问题': message})
+
+    requested_kind = data_type if data_type else file.stem
+    kind = TYPE_ALIASES.get(requested_kind, requested_kind)
+    result = {'文件': str(file), '通过': False, '错误': errors}
+    if not kind or '/' in kind or '\\' in kind:
+        fail((), '未知数据类型')
+        return result
+    schema_path = SCHEMA_DIR / f'{kind}.schema.json'
+    if not schema_path.is_file():
+        fail((), f'未知数据类型：{kind}；使用 --type 指定')
+        return result
+    try:
+        data = read_json(file)
+    except (OSError, ValueError) as exc:
+        fail((), f'无法读取 JSON：{exc}')
+        return result
+    schema = read_json(schema_path)
+    for error in Draft202012Validator(schema).iter_errors(data):
+        messages = {
+            'required': f'必填字段不齐：{error.validator_value}',
+            'type': f'字段类型错误，应为 {error.validator_value}',
+            'enum': f'取值不在允许范围：{error.validator_value}',
+            'pattern': f'格式不符：{error.instance}',
+            'additionalProperties': '包含数据约定未定义的字段',
+            'anyOf': '取值不符合任一允许类型或编号格式',
+            'minItems': f'数组条目至少 {error.validator_value} 个',
+            'maxItems': f'数组条目最多 {error.validator_value} 个',
+            'minimum': f'数值不得小于 {error.validator_value}',
+            'maximum': f'数值不得大于 {error.validator_value}',
+        }
+        fail(tuple(error.absolute_path), messages.get(error.validator, '字段不符合 JSON Schema'))
+    schema_valid = not errors
+    # 类型错误由 Schema 报出；只对类型正确的局部值进行语义检查。
+    parent_ep = _episode_from_path(file)
+    top_ep = data.get('集') if isinstance(data, dict) and isinstance(data.get('集'), int) else None
+    episode = parent_ep if parent_ep is not None else top_ep
+    if parent_ep is not None and top_ep is not None and parent_ep != top_ep:
+        fail(('集',), f'集号 {top_ep} 与目录 E{parent_ep:02d} 不一致')
+    if episode is None and kind != '角色卡':
+        for path, value in _walk(data):
+            field = next((p for p in reversed(path) if isinstance(p, str)), None)
+            is_id = field in ID_FIELDS and not (field == '动作' and kind != '对照表')
+            if is_id and isinstance(value, str) and (match := ID_RE.fullmatch(value)):
+                episode = int(match[1])
+                break
+
+    def times_and_episode(value, path=(), local_ep=episode):
+        if isinstance(value, dict):
+            own_ep = value.get('集')
+            if kind in ('角色卡', '全剧状态') and isinstance(own_ep, int):
+                local_ep = own_ep
+            if '提出集' in value and isinstance(value['提出集'], int) and local_ep is not None:
+                if value['提出集'] != local_ep:
+                    fail((*path, '提出集'), f'提出集与 E{local_ep:02d} 不一致')
+            start, end = value.get('起'), value.get('止')
+            if isinstance(start, str) and isinstance(end, str) and TIME_RE.fullmatch(start) and TIME_RE.fullmatch(end):
+                if time_seconds(start) > time_seconds(end):
+                    fail(path, '起晚于止')
+            for key, child in value.items():
+                if key in ('起', '止', '时间', '时长') and isinstance(child, str) and not TIME_RE.fullmatch(child):
+                    fail((*path, key), '时间须为 MM:SS.s')
+                times_and_episode(child, (*path, key), local_ep)
+        elif isinstance(value, list):
+            for i, child in enumerate(value):
+                times_and_episode(child, (*path, i), local_ep)
+        elif isinstance(value, str):
+            field = next((p for p in reversed(path) if isinstance(p, str)), None)
+            is_id = field in ID_FIELDS and not (field == '动作' and kind != '对照表')
+            match = ID_RE.fullmatch(value) if is_id else None
+            if match and local_ep is not None and int(match[1]) != local_ep:
+                fail(path, f'编号集号与 E{local_ep:02d} 不一致')
+            if field == '场景' and re.fullmatch(r'场景[1-9][0-9]*-[1-9][0-9]*', value) and local_ep is not None:
+                if int(value.split('-')[0][2:]) != local_ep:
+                    fail(path, f'场景集号与第 {local_ep} 集不一致')
+    times_and_episode(data)
+
+    item_field = {'镜头表': '镜头', '片段表': '片段', '全剧状态': '集'}.get(kind)
+    records = _items(data, item_field)
+    key = {'归属表': '句', '对照表': '行', '全剧状态': '集'}.get(kind, 'id')
+    seen = set()
+    for i, record in enumerate(records):
+        if isinstance(record, dict) and isinstance(record.get(key), (str, int)):
+            ident = record[key]
+            if ident in seen:
+                fail((item_field, i, key) if item_field else (i, key), f'{key}重复：{ident}')
+            seen.add(ident)
+
+    companions = {}
+    script_scenes = None
+
+    def load_companion(target_kind, target_ep=None):
+        target_file = file.parent / f'{target_kind}.json'
+        if target_kind == '角色卡':
+            target_file = file.parent / '角色卡.json'
+            if not target_file.exists():
+                target_file = file.parent.parent / '角色卡.json'
+        elif target_ep is not None and (episode != target_ep or kind == '角色卡'):
+            series = file.parent.parent if _episode_from_path(file) is not None else file.parent
+            target_file = series / f'E{target_ep:02d}' / f'{target_kind}.json'
+        if target_kind == kind and target_file.resolve() == file.resolve():
+            source = data
+        elif target_file in companions:
+            source = companions[target_file]
+        else:
+            try:
+                source = read_json(target_file)
+            except (OSError, ValueError) as exc:
+                source = f'无法读取引用文件 {target_file}：{exc}'
+            companions[target_file] = source
+        if isinstance(source, str):
+            return None, source
+        return source, None
+
+    def load_ids(target_kind, target_ep=None, id_field='id'):
+        source, problem = load_companion(target_kind, target_ep)
+        if problem:
+            return None, problem
+        field = {'镜头表': '镜头', '片段表': '片段'}.get(target_kind)
+        return {r[id_field] for r in _items(source, field)
+                if isinstance(r, dict) and isinstance(r.get(id_field), str)}, None
+
+    def reference(path, ident, target_kind, id_field='id'):
+        if not isinstance(ident, str):
+            return
+        match = ID_RE.fullmatch(ident)
+        target_ep = int(match[1]) if match and target_kind != '临时人物' else None
+        ids, problem = load_ids(target_kind, target_ep, id_field)
+        if problem:
+            fail(path, problem)
+        elif ident not in ids:
+            fail(path, f'引用编号不存在：{ident}（{target_kind}）')
+
+    # 只检查结构化引用，不把依据、说明中的自然语言当成编号。
+    ref_fields = {'镜头': '镜头表', '衔接前': '镜头表', '衔接后': '镜头表',
+                  '首次出场': '镜头表', '句': '声音记录', '动作': '动作记录',
+                  '未决问题': '问题', '本集新增人物': '角色卡',
+                  '片段': '片段表', '出现镜头': '镜头表'}
+    for path, value in _walk(data):
+        if not path or not isinstance(value, str):
+            continue
+        field = next((p for p in reversed(path) if isinstance(p, str)), None)
+        if field == '场景' and kind in ('对照表', '待核对', '问题清单'):
+            if script_scenes is None:
+                script_scenes = set()
+                for script_name in ('工作稿.md', '正式稿.md'):
+                    script_path = file.parent / script_name
+                    if script_path.is_file():
+                        try:
+                            text = script_path.read_text(encoding='utf-8')
+                        except (OSError, ValueError) as exc:
+                            fail(path, f'无法读取场景引用稿：{exc}')
+                            break
+                        if text.strip():
+                            script_scenes = set(re.findall(r'^(场景[1-9][0-9]*-[1-9][0-9]*)：', text, re.MULTILINE))
+                            break
+            if value not in script_scenes:
+                fail(path, f'引用场景不存在：{value}（工作稿或正式稿）')
+        # id、描述、依据等都不是引用字段。
+        if field == '动作' and kind != '对照表':
+            continue
+        if field in ref_fields and (ID_RE.fullmatch(value) or field == '本集新增人物'):
+            target = ref_fields[field]
+            if target == '问题':
+                ids1, err1 = load_ids('待核对')
+                ids2, err2 = load_ids('问题清单')
+                if value not in (ids1 or set()) | (ids2 or set()):
+                    fail(path, f'引用问题不存在：{value}' + (f'；{err1 or err2}' if err1 or err2 else ''))
+            else:
+                reference(path, value, target)
+        if kind == '角色卡' and field == '标签':
+            reference(path, value, '声音记录', '声线')
+        if field in ('执行者', '对象', '说话人', '相关人物', '映射', '涉及角色'):
+            if re.fullmatch(r'C[0-9]{3,}', value):
+                reference(path, value, '角色卡')
+            elif re.fullmatch(r'E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*', value):
+                reference(path, value, '临时人物')
+    if schema_valid:
+        if kind == '镜头表':
+            _check_shots(data, fail)
+        elif kind == '片段表':
+            source, problem = load_companion('镜头表')
+            if problem:
+                fail(('片段',), problem)
+            elif not list(Draft202012Validator(read_json(SCHEMA_DIR / '镜头表.schema.json')).iter_errors(source)):
+                _check_segments(data, source, fail)
+            else:
+                fail(('片段',), '引用镜头表结构不符合数据约定')
+        elif kind == '加密帧索引':
+            _check_frames(data, (), fail, dense=True)
+        elif kind == '临时人物':
+            for i, person in enumerate(data):
+                if person['id'].rsplit('-T', 1)[0] != person['片段']:
+                    fail((i, '片段'), '临时人物编号与所属片段不一致')
+        if kind == '状态':
+            seen_requests = set()
+            for i, request in enumerate(data['角色变更申请']):
+                if request['id'] in seen_requests:
+                    fail(('角色变更申请', i, 'id'), f'id重复：{request["id"]}')
+                seen_requests.add(request['id'])
+    result['通过'] = not errors
+    return result
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description='校验黑板 JSON 格式与引用')
+    parser.add_argument('文件')
+    parser.add_argument('--type', dest='data_type')
+    args = parser.parse_args()
+    result = validate_file(args.文件, args.data_type)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result['通过'] else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

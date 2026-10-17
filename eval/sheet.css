@@ -1,0 +1,28 @@
+:root { color-scheme: light; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #202b38; background: #edf1f6; line-height: 1.6; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header, main { max-width: 76rem; margin: auto; padding: 1rem; }
+header { border-bottom: .25rem solid #245583; }
+h1 { font-size: 1.8rem; margin: .5rem 0; }
+h2 { font-size: 1.4rem; margin: 1.5rem 0 .75rem; }
+h3, legend { font-weight: 650; }
+a { color: #174d7a; }
+nav, .toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+button, input, select, textarea { font: inherit; }
+button { background: #fff; color: #173d61; border: 1px solid #6a7e94; border-radius: .25rem; padding: .4rem .8rem; min-height: 2.75rem; cursor: pointer; }
+#export { background: #245583; color: white; }
+input, select, textarea { display: block; width: 100%; padding: .5rem; border: 1px solid #6a7e94; background: #fff; color: #202b38; border-radius: .2rem; min-width: 0; }
+textarea { min-height: 5rem; resize: vertical; }
+input[type=checkbox] { width: auto; display: inline; }
+label { display: block; font-size: .95rem; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .8rem; margin-bottom: .75rem; }
+fieldset { min-width: 0; margin: 1rem 0; border: 1px solid #9cabbc; padding: .75rem; border-radius: .25rem; }
+.shot { margin-block: 1.5rem; padding: 1rem; background: #fff; border-left: .3rem solid #6a7e94; }
+.frames { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }
+figure { margin: 0; width: min(27%, 12rem); }
+figure img { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: contain; background: #d9e0e8; }
+figcaption { font-variant-numeric: tabular-nums; }
+video { width: min(100%, 20rem); max-height: 34rem; display: block; background: #000; }
+#status { min-height: 2rem; font-weight: 600; }
+:focus-visible { outline: 3px solid #174d7a; outline-offset: 3px; }
+@media (max-width: 34rem) { figure { width: 29%; } header, main { padding: .75rem; } .shot { padding: .75rem; } }

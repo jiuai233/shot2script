@@ -1,0 +1,746 @@
+{
+  "动作识别": {
+    "type": "object",
+    "properties": {
+      "片段": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-P[0-9]{2,}$"
+      },
+      "模式": {
+        "enum": [
+          "片段识别",
+          "定向复看"
+        ]
+      },
+      "镜头": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "镜头": {
+              "type": "string",
+              "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+            },
+            "起": {
+              "type": "string",
+              "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+            },
+            "止": {
+              "type": "string",
+              "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+            },
+            "场景信息": {
+              "type": "object",
+              "properties": {
+                "地点": {
+                  "type": "string"
+                },
+                "日夜": {
+                  "enum": [
+                    "日",
+                    "夜",
+                    "不明"
+                  ]
+                },
+                "内外": {
+                  "enum": [
+                    "内",
+                    "外",
+                    "不明"
+                  ]
+                },
+                "闪回迹象": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "地点",
+                "日夜",
+                "内外",
+                "闪回迹象"
+              ],
+              "additionalProperties": false
+            },
+            "画面人物": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "人物": {
+                    "type": "string",
+                    "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*)$"
+                  },
+                  "外观": {
+                    "type": "string"
+                  },
+                  "位置": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "人物",
+                  "位置"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "动作": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "起": {
+                    "type": "string",
+                    "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+                  },
+                  "止": {
+                    "type": "string",
+                    "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+                  },
+                  "执行者": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^C[0-9]{3,}$"
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*$"
+                      }
+                    ]
+                  },
+                  "动作": {
+                    "type": "string"
+                  },
+                  "对象": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "物件": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "结果": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "关键": {
+                    "type": "boolean"
+                  },
+                  "关键类别": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          1,
+                          2,
+                          3,
+                          4,
+                          5
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "依据帧": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(K[0-9]{3,}_[0-9]{2}|t[0-9]{2}-[0-5][0-9]\\.[0-9])\\.jpg$"
+                    },
+                    "minItems": 1
+                  },
+                  "确定度": {
+                    "enum": [
+                      "确认",
+                      "存疑"
+                    ]
+                  },
+                  "说明": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "起",
+                  "止",
+                  "执行者",
+                  "动作",
+                  "对象",
+                  "物件",
+                  "结果",
+                  "关键",
+                  "关键类别",
+                  "依据帧",
+                  "确定度",
+                  "说明"
+                ],
+                "additionalProperties": false,
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "关键": {
+                          "const": true
+                        }
+                      }
+                    },
+                    "then": {
+                      "properties": {
+                        "关键类别": {
+                          "type": "integer",
+                          "enum": [
+                            1,
+                            2,
+                            3,
+                            4,
+                            5
+                          ]
+                        }
+                      }
+                    },
+                    "else": {
+                      "properties": {
+                        "关键类别": {
+                          "type": "null"
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            },
+            "神态": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "人物": {
+                    "type": "string",
+                    "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*)$"
+                  },
+                  "神态": {
+                    "type": "string"
+                  },
+                  "时间": {
+                    "type": "string",
+                    "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+                  },
+                  "依据帧": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(K[0-9]{3,}_[0-9]{2}|t[0-9]{2}-[0-5][0-9]\\.[0-9])\\.jpg$"
+                    },
+                    "minItems": 1
+                  }
+                },
+                "required": [
+                  "人物",
+                  "神态",
+                  "时间",
+                  "依据帧"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "口型": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "人声时间段",
+                  "人物状态"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "人声时间段": {
+                    "type": "string",
+                    "pattern": "^\\d{2,}:\\d{2}\\.\\d-\\d{2,}:\\d{2}\\.\\d$"
+                  },
+                  "人物状态": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "人物",
+                        "状态"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "人物": {
+                          "type": "string"
+                        },
+                        "状态": {
+                          "enum": [
+                            "可见",
+                            "被挡",
+                            "背对",
+                            "出画"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "画面文字": {
+              "type": "array"
+            },
+            "说明": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "镜头",
+            "起",
+            "止",
+            "场景信息",
+            "画面人物",
+            "动作",
+            "神态",
+            "口型",
+            "画面文字",
+            "说明"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "衔接": {
+        "type": "object",
+        "properties": {
+          "承接前段": {
+            "type": "string"
+          },
+          "延续到后段": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "承接前段",
+          "延续到后段"
+        ],
+        "additionalProperties": false
+      },
+      "加密取帧请求": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "镜头": {
+              "type": "string",
+              "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+            },
+            "时间": {
+              "type": "string"
+            },
+            "原因": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "镜头",
+            "时间",
+            "原因"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "待核对": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "位置": {
+              "type": "object",
+              "minProperties": 1
+            },
+            "问题": {
+              "type": "string"
+            },
+            "需要": {
+              "type": "string"
+            },
+            "级别": {
+              "enum": [
+                "阻断",
+                "规范"
+              ]
+            }
+          },
+          "required": [
+            "位置",
+            "问题",
+            "级别"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": [
+      "片段",
+      "模式",
+      "镜头",
+      "衔接",
+      "加密取帧请求",
+      "待核对"
+    ],
+    "additionalProperties": false
+  },
+  "角色卡": {
+    "type": "object",
+    "properties": {
+      "模式": {
+        "enum": [
+          "建立",
+          "定向核对",
+          "总结"
+        ]
+      },
+      "临时人物映射": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "临时": {
+              "type": "string",
+              "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*)$"
+            },
+            "映射": {
+              "type": "string",
+              "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*)$"
+            },
+            "依据": {
+              "type": "string"
+            },
+            "确定度": {
+              "enum": [
+                "确认",
+                "存疑"
+              ]
+            }
+          },
+          "required": [
+            "临时",
+            "映射",
+            "依据",
+            "确定度"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "新增人物": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "名称": {
+              "type": "string"
+            },
+            "名称类型": {
+              "enum": [
+                "姓名",
+                "描述名"
+              ]
+            },
+            "外观": {
+              "type": "string"
+            },
+            "参考帧": {
+              "type": "string"
+            },
+            "依据": {
+              "type": "string"
+            },
+            "出场镜头": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+              }
+            }
+          },
+          "required": [
+            "名称",
+            "名称类型",
+            "外观",
+            "参考帧",
+            "依据",
+            "出场镜头"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "补充资料": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "角色": {
+              "type": "string",
+              "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*)$"
+            },
+            "外观": {
+              "type": "string"
+            },
+            "声线": {
+              "type": "object"
+            },
+            "新称呼": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "依据": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "角色",
+            "依据"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "对白归属": {
+        "type": "array"
+      },
+      "变更申请": {
+        "type": "array"
+      },
+      "待核对": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "位置": {
+              "type": "object",
+              "minProperties": 1
+            },
+            "问题": {
+              "type": "string"
+            },
+            "需要": {
+              "type": "string"
+            },
+            "级别": {
+              "enum": [
+                "阻断",
+                "规范"
+              ]
+            }
+          },
+          "required": [
+            "位置",
+            "问题",
+            "级别"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "性格总结": {
+        "type": "array"
+      }
+    },
+    "required": [
+      "模式",
+      "临时人物映射",
+      "新增人物",
+      "补充资料",
+      "对白归属",
+      "变更申请",
+      "待核对",
+      "性格总结"
+    ],
+    "additionalProperties": false
+  },
+  "验收": {
+    "type": "object",
+    "properties": {
+      "模式": {
+        "enum": [
+          "全文审查",
+          "复核",
+          "跨集"
+        ]
+      },
+      "集": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "审查范围": {
+        "type": "object",
+        "properties": {
+          "行": {
+            "type": "string"
+          },
+          "场景": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "镜头": {
+            "type": "string"
+          },
+          "对白句": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "行",
+          "场景",
+          "镜头",
+          "对白句"
+        ],
+        "additionalProperties": false
+      },
+      "问题": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "位置": {
+              "type": "object",
+              "minProperties": 1
+            },
+            "原文": {
+              "type": "string"
+            },
+            "类型": {
+              "enum": [
+                "具体动作",
+                "动作与对白关联",
+                "人物指代与角色卡",
+                "声音与画面归属",
+                "全文完整性与一致性",
+                "角色卡资料"
+              ]
+            },
+            "级别": {
+              "enum": [
+                "阻断",
+                "规范"
+              ]
+            },
+            "相关人物": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*)$"
+              }
+            },
+            "依据": {
+              "type": "string",
+              "minLength": 1
+            },
+            "修正要求": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "位置",
+            "原文",
+            "类型",
+            "级别",
+            "相关人物",
+            "依据",
+            "修正要求"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "复核": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "问题": {
+              "type": "string"
+            },
+            "结果": {
+              "enum": [
+                "通过",
+                "未通过"
+              ]
+            },
+            "说明": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "问题",
+            "结果",
+            "说明"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "统计": {
+        "type": "object",
+        "properties": {
+          "阻断": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "规范": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "阻断",
+          "规范"
+        ],
+        "additionalProperties": false
+      },
+      "结论": {
+        "enum": [
+          "通过",
+          "不通过"
+        ]
+      }
+    },
+    "required": [
+      "模式",
+      "集",
+      "审查范围",
+      "问题",
+      "复核",
+      "统计",
+      "结论"
+    ],
+    "additionalProperties": false
+  },
+  "成稿": {
+    "type": "object",
+    "properties": {
+      "工作稿": {
+        "type": "string",
+        "minLength": 1
+      },
+      "对照表": {
+        "type": "array"
+      },
+      "改动对照": {
+        "type": "array"
+      }
+    },
+    "required": [
+      "工作稿",
+      "对照表"
+    ],
+    "additionalProperties": false
+  }
+}

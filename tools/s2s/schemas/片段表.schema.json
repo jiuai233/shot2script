@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "片段表",
+  "type": "object",
+  "properties": {
+    "集": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "片段": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^E[0-9]{2,}-P[0-9]{2,}$"
+          },
+          "镜头": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+            },
+            "minItems": 1
+          },
+          "起": {
+            "type": "string",
+            "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+          },
+          "止": {
+            "type": "string",
+            "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+          },
+          "衔接前": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "衔接后": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "镜头",
+          "起",
+          "止",
+          "衔接前",
+          "衔接后"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "集",
+    "片段"
+  ],
+  "additionalProperties": false
+}

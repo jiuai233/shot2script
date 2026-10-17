@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>第1集 标注工作表</title><style>:root { color-scheme: light; font-family: 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #202b38; background: #edf1f6; line-height: 1.6; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+header, main { max-width: 76rem; margin: auto; padding: 1rem; }
+header { border-bottom: .25rem solid #245583; }
+h1 { font-size: 1.8rem; margin: .5rem 0; }
+h2 { font-size: 1.4rem; margin: 1.5rem 0 .75rem; }
+h3, legend { font-weight: 650; }
+a { color: #174d7a; }
+nav, .toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+button, input, select, textarea { font: inherit; }
+button { background: #fff; color: #173d61; border: 1px solid #6a7e94; border-radius: .25rem; padding: .4rem .8rem; min-height: 2.75rem; cursor: pointer; }
+#export { background: #245583; color: white; }
+input, select, textarea { display: block; width: 100%; padding: .5rem; border: 1px solid #6a7e94; background: #fff; color: #202b38; border-radius: .2rem; min-width: 0; }
+textarea { min-height: 5rem; resize: vertical; }
+input[type=checkbox] { width: auto; display: inline; }
+label { display: block; font-size: .95rem; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: .8rem; margin-bottom: .75rem; }
+fieldset { min-width: 0; margin: 1rem 0; border: 1px solid #9cabbc; padding: .75rem; border-radius: .25rem; }
+.shot { margin-block: 1.5rem; padding: 1rem; background: #fff; border-left: .3rem solid #6a7e94; }
+.frames { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 1rem; }
+figure { margin: 0; width: min(27%, 12rem); }
+figure img { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: contain; background: #d9e0e8; }
+figcaption { font-variant-numeric: tabular-nums; }
+video { width: min(100%, 20rem); max-height: 34rem; display: block; background: #000; }
+#status { min-height: 2rem; font-weight: 600; }
+:focus-visible { outline: 3px solid #174d7a; outline-offset: 3px; }
+@media (max-width: 34rem) { figure { width: 29%; } header, main { padding: .75rem; } .shot { padding: .75rem; } }
+</style></head><body>
+<header><a href="#shots">跳到镜头</a><h1>第1集 标注工作表</h1>
+<p>先回听校对台词，再登记人物与关键动作。字幕时间仅供参考；修改不会自动保存，离开前请导出。</p>
+<p id="counts"></p><nav aria-label="标注区域"><a href="#people-title">人物</a><a href="#actions-title">关键动作</a><a href="#shots-title">逐镜头台词</a></nav>
+<div class="toolbar"><button id="export" type="button">导出标注.json</button><label>导入已保存标注<input id="import" type="file" accept=".json,application/json"></label>
+<label><input id="complete" type="checkbox">已完整回看、回听并校对，无待核对项</label></div>
+<p id="status" role="status" tabindex="-1"></p></header><main>
+<section aria-labelledby="video-title"><h2 id="video-title">原视频</h2><video id="video" src="../../../videos/sample/E01.mp4" controls preload="metadata"></video></section>
+<section aria-labelledby="people-title"><h2 id="people-title">人物</h2><p>姓名没有依据时填具体描述名；出现时间用 00:05.0-00:30.0，多个时间段用逗号隔开。</p><button id="add-person" type="button">添加人物</button><div id="people"></div></section>
+<section aria-labelledby="actions-title"><h2 id="actions-title">关键动作</h2><p>执行者选人物编号；对象是人物时填 H 编号，是物品时写物品名称；没有则留空。</p><button id="add-action" type="button">添加关键动作</button><div id="actions"></div></section>
+<section aria-labelledby="shots-title"><h2 id="shots-title">逐镜头台词</h2><div class="toolbar"><button id="add-line" type="button">添加台词</button><button id="refresh" type="button">按修改后的时间重新排列</button></div><div id="shots"></div><h3>未落在镜头内的台词</h3><div id="unplaced"></div></section>
+</main><script id="sheet-data" type="application/json">{"annotation": {"集": 1, "视频": "videos/sample/E01.mp4", "校对完成": false, "人物": [], "台词": [{"id": "L001", "起": "00:00.1", "止": "00:01.0", "文本": "奶奶奶奶", "说话人": null, "形态": null}, {"id": "L002", "起": "00:01.5", "止": "00:02.5", "文本": "你等等我", "说话人": null, "形态": null}, {"id": "L003", "起": "00:03.3", "止": "00:04.4", "文本": "小孩让开", "说话人": null, "形态": null}, {"id": "L004", "起": "00:05.6", "止": "00:06.1", "文本": "糊啦", "说话人": null, "形态": null}, {"id": "L005", "起": "00:08.1", "止": "00:09.6", "文本": "桂芝你电话响半天了", "说话人": null, "形态": null}, {"id": "L006", "起": "00:09.8", "止": "00:11.2", "文本": "不会是你孙女出什么事了吧", "说话人": null, "形态": null}, {"id": "L007", "起": "00:11.6", "止": "00:12.1", "文本": "能出什么事", "说话人": null, "形态": null}, {"id": "L008", "起": "00:12.6", "止": "00:12.9", "文本": "老师看着呢", "说话人": null, "形态": null}, {"id": "L009", "起": "00:14.5", "止": "00:15.4", "文本": "朵朵呢我问你", "说话人": null, "形态": null}, {"id": "L010", "起": "00:15.8", "止": "00:15.8", "文本": "我女儿呢", "说话人": null, "形态": null}, {"id": "L011", "起": "00:21.1", "止": "00:22.0", "文本": "喂又怎么了", "说话人": null, "形态": null}, {"id": "L012", "起": "00:22.2", "止": "00:23.7", "文本": "妈等会别忘了接朵朵", "说话人": null, "形态": null}, {"id": "L013", "起": "00:23.9", "止": "00:24.8", "文本": "你自己看看几点", "说话人": null, "形态": null}, {"id": "L014", "起": "00:25.2", "止": "00:25.8", "文本": "放学还有半个小时呢", "说话人": null, "形态": null}, {"id": "L015", "起": "00:26.4", "止": "00:27.6", "文本": "我人都杵幼儿园门口了", "说话人": null, "形态": null}, {"id": "L016", "起": "00:27.8", "止": "00:29.1", "文本": "妈我就提醒一句", "说话人": null, "形态": null}, {"id": "L017", "起": "00:29.3", "止": "00:30.2", "文本": "接个孩子而已", "说话人": null, "形态": null}, {"id": "L018", "起": "00:31.3", "止": "00:32.2", "文本": "你一天800个电话", "说话人": null, "形态": null}, {"id": "L019", "起": "00:32.8", "止": "00:33.7", "文本": "跟查我岗似的", "说话人": null, "形态": null}, {"id": "L020", "起": "00:34.1", "止": "00:34.6", "文本": "我没查你", "说话人": null, "形态": null}, {"id": "L021", "起": "00:35.2", "止": "00:36.1", "文本": "我就是怕孩子等", "说话人": null, "形态": null}, {"id": "L022", "起": "00:37.8", "止": "00:38.7", "文本": "今天来的够早啊", "说话人": null, "形态": null}, {"id": "L023", "起": "00:39.3", "止": "00:39.8", "文本": "什么叫今天", "说话人": null, "形态": null}, {"id": "L024", "起": "00:40.5", "止": "00:42.1", "文本": "我哪天接我孙女不积极", "说话人": null, "形态": null}, {"id": "L025", "起": "00:43.7", "止": "00:45.0", "文本": "看清楚3:40", "说话人": null, "形态": null}, {"id": "L026", "起": "00:45.2", "止": "00:46.6", "文本": "今天我提前半小时站这", "说话人": null, "形态": null}, {"id": "L027", "起": "00:45.5", "止": "00:45.5", "文本": "18克0日・黑税二目", "说话人": null, "形态": null}, {"id": "L028", "起": "00:47.0", "止": "00:48.0", "文本": "我看谁还能说我迟到", "说话人": null, "形态": null}, {"id": "L029", "起": "00:49.9", "止": "00:49.9", "文本": "当丫孤梨", "说话人": null, "形态": null}, {"id": "L030", "起": "00:50.3", "止": "00:50.8", "文本": "桂芝人呢", "说话人": null, "形态": null}, {"id": "L031", "起": "00:51.1", "止": "00:51.3", "文本": "幼儿园门口啊", "说话人": null, "形态": null}, {"id": "L032", "起": "00:51.8", "止": "00:52.6", "文本": "接孙女呢", "说话人": null, "形态": null}, {"id": "L033", "起": "00:53.0", "止": "00:54.2", "文本": "快过来幼儿园对面棋牌室", "说话人": null, "形态": null}, {"id": "L034", "起": "00:55.2", "止": "00:56.2", "文本": "三缺一就差你一个", "说话人": null, "形态": null}, {"id": "L035", "起": "00:56.4", "止": "00:56.8", "文本": "不去不去", "说话人": null, "形态": null}, {"id": "L036", "起": "00:57.4", "止": "00:58.3", "文本": "我还得接孙女呢", "说话人": null, "形态": null}, {"id": "L037", "起": "00:58.5", "止": "00:59.9", "文本": "这不还没放学吗", "说话人": null, "形态": null}, {"id": "L038", "起": "01:00.4", "止": "01:00.8", "文本": "就一把", "说话人": null, "形态": null}, {"id": "L039", "起": "01:01.2", "止": "01:02.6", "文本": "朵朵4:10才出来", "说话人": null, "形态": null}, {"id": "L040", "起": "01:03.0", "止": "01:04.3", "文本": "现在还有20多分钟", "说话人": null, "形态": null}, {"id": "L041", "起": "01:04.5", "止": "01:05.9", "文本": "你在门口傻站着也是等", "说话人": null, "形态": null}, {"id": "L042", "起": "01:06.3", "止": "01:07.1", "文本": "过来打两圈", "说话人": null, "形态": null}, {"id": "L043", "起": "01:07.7", "止": "01:09.0", "文本": "放学前回去不就完了", "说话人": null, "形态": null}, {"id": "L044", "起": "01:09.2", "止": "01:09.6", "文本": "说好了啊", "说话人": null, "形态": null}, {"id": "L045", "起": "01:10.1", "止": "01:11.8", "文本": "就一把打完我立马走", "说话人": null, "形态": null}, {"id": "L046", "起": "01:12.0", "止": "01:14.0", "文本": "行行行就等你了赶紧的", "说话人": null, "形态": null}, {"id": "L047", "起": "01:16.3", "止": "01:17.6", "文本": "哎呦可算把你盼来了", "说话人": null, "形态": null}, {"id": "L048", "起": "01:17.8", "止": "01:18.2", "文本": "快坐快坐", "说话人": null, "形态": null}, {"id": "L049", "起": "01:18.5", "止": "01:19.2", "文本": "牌都摆好了", "说话人": null, "形态": null}, {"id": "L050", "起": "01:20.5", "止": "01:21.7", "文本": "先把话说前头啊", "说话人": null, "形态": null}, {"id": "L051", "起": "01:21.9", "止": "01:22.8", "文本": "我就打一把", "说话人": null, "形态": null}, {"id": "L052", "起": "01:23.3", "止": "01:25.2", "文本": "4:10我得去接我孙女", "说话人": null, "形态": null}, {"id": "L053", "起": "01:25.4", "止": "01:25.8", "文本": "知道知道", "说话人": null, "形态": null}, {"id": "L054", "起": "01:26.4", "止": "01:27.5", "文本": "耽误不了你接宝贝孙女", "说话人": null, "形态": null}, {"id": "L055", "起": "01:27.7", "止": "01:28.3", "文本": "那还磨蹭什么", "说话人": null, "形态": null}, {"id": "L056", "起": "01:28.6", "止": "01:29.0", "文本": "赶紧洗牌", "说话人": null, "形态": null}], "关键动作": []}, "shots": [{"id": "E01-K001", "起": "00:00.0", "止": "00:03.0", "frames": [{"时间": "00:00.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K001_01.jpg"}, {"时间": "00:01.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K001_04.jpg"}, {"时间": "00:02.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K001_07.jpg"}]}, {"id": "E01-K002", "起": "00:03.0", "止": "00:03.7", "frames": [{"时间": "00:03.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K002_01.jpg"}, {"时间": "00:03.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K002_02.jpg"}, {"时间": "00:03.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K002_03.jpg"}]}, {"id": "E01-K003", "起": "00:03.7", "止": "00:04.5", "frames": [{"时间": "00:03.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K003_01.jpg"}, {"时间": "00:04.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K003_02.jpg"}, {"时间": "00:04.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K003_03.jpg"}]}, {"id": "E01-K004", "起": "00:04.5", "止": "00:05.2", "frames": [{"时间": "00:04.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K004_01.jpg"}, {"时间": "00:04.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K004_02.jpg"}, {"时间": "00:05.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K004_03.jpg"}]}, {"id": "E01-K005", "起": "00:05.2", "止": "00:05.5", "frames": [{"时间": "00:05.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K005_01.jpg"}]}, {"id": "E01-K006", "起": "00:05.5", "止": "00:06.7", "frames": [{"时间": "00:05.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K006_01.jpg"}, {"时间": "00:06.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K006_02.jpg"}, {"时间": "00:06.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K006_03.jpg"}]}, {"id": "E01-K007", "起": "00:06.7", "止": "00:08.0", "frames": [{"时间": "00:06.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K007_01.jpg"}, {"时间": "00:07.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K007_03.jpg"}, {"时间": "00:07.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K007_05.jpg"}]}, {"id": "E01-K008", "起": "00:08.0", "止": "00:09.7", "frames": [{"时间": "00:08.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K008_01.jpg"}, {"时间": "00:08.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K008_03.jpg"}, {"时间": "00:09.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K008_05.jpg"}]}, {"id": "E01-K009", "起": "00:09.7", "止": "00:11.1", "frames": [{"时间": "00:09.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K009_01.jpg"}, {"时间": "00:10.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K009_03.jpg"}, {"时间": "00:11.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K009_05.jpg"}]}, {"id": "E01-K010", "起": "00:11.1", "止": "00:13.0", "frames": [{"时间": "00:11.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K010_01.jpg"}, {"时间": "00:12.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K010_03.jpg"}, {"时间": "00:12.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K010_05.jpg"}]}, {"id": "E01-K011", "起": "00:13.0", "止": "00:14.9", "frames": [{"时间": "00:13.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K011_01.jpg"}, {"时间": "00:13.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K011_03.jpg"}, {"时间": "00:14.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K011_05.jpg"}]}, {"id": "E01-K012", "起": "00:14.9", "止": "00:16.6", "frames": [{"时间": "00:15.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K012_01.jpg"}, {"时间": "00:15.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K012_03.jpg"}, {"时间": "00:16.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K012_04.jpg"}]}, {"id": "E01-K013", "起": "00:16.6", "止": "00:22.1", "frames": [{"时间": "00:16.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K013_01.jpg"}, {"时间": "00:19.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K013_07.jpg"}, {"时间": "00:22.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K013_12.jpg"}]}, {"id": "E01-K014", "起": "00:22.1", "止": "00:23.8", "frames": [{"时间": "00:22.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K014_01.jpg"}, {"时间": "00:23.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K014_03.jpg"}, {"时间": "00:23.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K014_04.jpg"}]}, {"id": "E01-K015", "起": "00:23.8", "止": "00:26.5", "frames": [{"时间": "00:23.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K015_01.jpg"}, {"时间": "00:25.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K015_04.jpg"}, {"时间": "00:26.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K015_06.jpg"}]}, {"id": "E01-K016", "起": "00:26.5", "止": "00:27.7", "frames": [{"时间": "00:26.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K016_01.jpg"}, {"时间": "00:27.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K016_02.jpg"}, {"时间": "00:27.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K016_03.jpg"}]}, {"id": "E01-K017", "起": "00:27.7", "止": "00:29.2", "frames": [{"时间": "00:27.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K017_01.jpg"}, {"时间": "00:28.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K017_03.jpg"}, {"时间": "00:29.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K017_05.jpg"}]}, {"id": "E01-K018", "起": "00:29.2", "止": "00:30.8", "frames": [{"时间": "00:29.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K018_01.jpg"}, {"时间": "00:30.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K018_03.jpg"}, {"时间": "00:30.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K018_05.jpg"}]}, {"id": "E01-K019", "起": "00:30.8", "止": "00:33.6", "frames": [{"时间": "00:30.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K019_01.jpg"}, {"时间": "00:32.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K019_04.jpg"}, {"时间": "00:33.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K019_07.jpg"}]}, {"id": "E01-K020", "起": "00:33.6", "止": "00:36.7", "frames": [{"时间": "00:33.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K020_01.jpg"}, {"时间": "00:35.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K020_04.jpg"}, {"时间": "00:36.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K020_07.jpg"}]}, {"id": "E01-K021", "起": "00:36.7", "止": "00:38.8", "frames": [{"时间": "00:36.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K021_01.jpg"}, {"时间": "00:37.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K021_03.jpg"}, {"时间": "00:38.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K021_05.jpg"}]}, {"id": "E01-K022", "起": "00:38.8", "止": "00:42.2", "frames": [{"时间": "00:38.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K022_01.jpg"}, {"时间": "00:40.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K022_05.jpg"}, {"时间": "00:42.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K022_09.jpg"}]}, {"id": "E01-K023", "起": "00:42.2", "止": "00:44.0", "frames": [{"时间": "00:42.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K023_01.jpg"}, {"时间": "00:43.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K023_03.jpg"}, {"时间": "00:43.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K023_05.jpg"}]}, {"id": "E01-K024", "起": "00:44.0", "止": "00:45.1", "frames": [{"时间": "00:44.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K024_01.jpg"}, {"时间": "00:44.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K024_02.jpg"}, {"时间": "00:45.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K024_03.jpg"}]}, {"id": "E01-K025", "起": "00:45.1", "止": "00:45.6", "frames": [{"时间": "00:45.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K025_01.jpg"}, {"时间": "00:45.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K025_02.jpg"}]}, {"id": "E01-K026", "起": "00:45.6", "止": "00:46.5", "frames": [{"时间": "00:45.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K026_01.jpg"}, {"时间": "00:46.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K026_02.jpg"}, {"时间": "00:46.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K026_03.jpg"}]}, {"id": "E01-K027", "起": "00:46.5", "止": "00:48.5", "frames": [{"时间": "00:46.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K027_01.jpg"}, {"时间": "00:47.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K027_03.jpg"}, {"时间": "00:48.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K027_05.jpg"}]}, {"id": "E01-K028", "起": "00:48.5", "止": "00:49.8", "frames": [{"时间": "00:48.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K028_01.jpg"}, {"时间": "00:49.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K028_03.jpg"}, {"时间": "00:49.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K028_04.jpg"}]}, {"id": "E01-K029", "起": "00:49.8", "止": "00:52.5", "frames": [{"时间": "00:49.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K029_01.jpg"}, {"时间": "00:51.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K029_04.jpg"}, {"时间": "00:52.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K029_07.jpg"}]}, {"id": "E01-K030", "起": "00:52.5", "止": "00:54.1", "frames": [{"时间": "00:52.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K030_01.jpg"}, {"时间": "00:53.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K030_03.jpg"}, {"时间": "00:54.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K030_05.jpg"}]}, {"id": "E01-K031", "起": "00:54.1", "止": "00:56.3", "frames": [{"时间": "00:54.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K031_01.jpg"}, {"时间": "00:55.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K031_03.jpg"}, {"时间": "00:56.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K031_05.jpg"}]}, {"id": "E01-K032", "起": "00:56.3", "止": "00:58.4", "frames": [{"时间": "00:56.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K032_01.jpg"}, {"时间": "00:57.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K032_03.jpg"}, {"时间": "00:58.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K032_05.jpg"}]}, {"id": "E01-K033", "起": "00:58.4", "止": "01:00.7", "frames": [{"时间": "00:58.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K033_01.jpg"}, {"时间": "00:59.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K033_04.jpg"}, {"时间": "01:00.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K033_07.jpg"}]}, {"id": "E01-K034", "起": "01:00.7", "止": "01:02.5", "frames": [{"时间": "01:00.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K034_01.jpg"}, {"时间": "01:01.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K034_03.jpg"}, {"时间": "01:02.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K034_05.jpg"}]}, {"id": "E01-K035", "起": "01:02.5", "止": "01:04.4", "frames": [{"时间": "01:02.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K035_01.jpg"}, {"时间": "01:03.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K035_03.jpg"}, {"时间": "01:04.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K035_05.jpg"}]}, {"id": "E01-K036", "起": "01:04.4", "止": "01:05.8", "frames": [{"时间": "01:04.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K036_01.jpg"}, {"时间": "01:05.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K036_03.jpg"}, {"时间": "01:05.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K036_05.jpg"}]}, {"id": "E01-K037", "起": "01:05.8", "止": "01:07.2", "frames": [{"时间": "01:05.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K037_01.jpg"}, {"时间": "01:06.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K037_03.jpg"}, {"时间": "01:07.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K037_05.jpg"}]}, {"id": "E01-K038", "起": "01:07.2", "止": "01:09.1", "frames": [{"时间": "01:07.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K038_01.jpg"}, {"时间": "01:08.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K038_03.jpg"}, {"时间": "01:09.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K038_05.jpg"}]}, {"id": "E01-K039", "起": "01:09.1", "止": "01:11.9", "frames": [{"时间": "01:09.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K039_01.jpg"}, {"时间": "01:10.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K039_04.jpg"}, {"时间": "01:11.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K039_07.jpg"}]}, {"id": "E01-K040", "起": "01:11.9", "止": "01:13.5", "frames": [{"时间": "01:12.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K040_01.jpg"}, {"时间": "01:12.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K040_03.jpg"}, {"时间": "01:13.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K040_05.jpg"}]}, {"id": "E01-K041", "起": "01:13.5", "止": "01:15.2", "frames": [{"时间": "01:13.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K041_01.jpg"}, {"时间": "01:14.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K041_03.jpg"}, {"时间": "01:15.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K041_04.jpg"}]}, {"id": "E01-K042", "起": "01:15.2", "止": "01:16.4", "frames": [{"时间": "01:15.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K042_01.jpg"}, {"时间": "01:15.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K042_02.jpg"}, {"时间": "01:16.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K042_03.jpg"}]}, {"id": "E01-K043", "起": "01:16.4", "止": "01:17.7", "frames": [{"时间": "01:16.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K043_01.jpg"}, {"时间": "01:17.1", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K043_03.jpg"}, {"时间": "01:17.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K043_05.jpg"}]}, {"id": "E01-K044", "起": "01:17.7", "止": "01:19.3", "frames": [{"时间": "01:17.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K044_01.jpg"}, {"时间": "01:18.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K044_03.jpg"}, {"时间": "01:19.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K044_05.jpg"}]}, {"id": "E01-K045", "起": "01:19.3", "止": "01:21.8", "frames": [{"时间": "01:19.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K045_01.jpg"}, {"时间": "01:20.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K045_04.jpg"}, {"时间": "01:21.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K045_07.jpg"}]}, {"id": "E01-K046", "起": "01:21.8", "止": "01:25.3", "frames": [{"时间": "01:21.9", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K046_01.jpg"}, {"时间": "01:23.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K046_05.jpg"}, {"时间": "01:25.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K046_09.jpg"}]}, {"id": "E01-K047", "起": "01:25.3", "止": "01:27.6", "frames": [{"时间": "01:25.4", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K047_01.jpg"}, {"时间": "01:26.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K047_04.jpg"}, {"时间": "01:27.5", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K047_06.jpg"}]}, {"id": "E01-K048", "起": "01:27.6", "止": "01:28.9", "frames": [{"时间": "01:27.7", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K048_01.jpg"}, {"时间": "01:28.3", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K048_03.jpg"}, {"时间": "01:28.8", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K048_05.jpg"}]}, {"id": "E01-K049", "起": "01:28.9", "止": "01:30.3", "frames": [{"时间": "01:29.0", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K049_01.jpg"}, {"时间": "01:29.6", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K049_03.jpg"}, {"时间": "01:30.2", "src": "../../../%E5%89%A7%E7%9B%AE/%E6%A0%B7%E6%9C%AC%E5%89%A7/E01/%E7%B4%A0%E6%9D%90/frames/K049_05.jpg"}]}], "schema": {"$schema": "https://json-schema.org/draft/2020-12/schema", "title": "逐镜头人工标注", "type": "object", "properties": {"集": {"type": "integer", "minimum": 1}, "视频": {"type": "string", "minLength": 1}, "校对完成": {"type": "boolean"}, "人物": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "pattern": "^H[0-9]{2,}$"}, "名称": {"type": "string", "minLength": 1}, "外观": {"type": "string", "minLength": 1}, "出现": {"type": "array", "items": {"type": "string", "pattern": "^[0-9]{2,}:[0-5][0-9]\\.[0-9]-[0-9]{2,}:[0-5][0-9]\\.[0-9]$"}}, "待核对": {"type": "string"}}, "required": ["id", "名称", "外观", "出现"], "additionalProperties": false}}, "台词": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "pattern": "^L[0-9]{2,}$"}, "起": {"type": "string", "pattern": "^[0-9]{2,}:[0-5][0-9]\\.[0-9]$"}, "止": {"type": "string", "pattern": "^[0-9]{2,}:[0-5][0-9]\\.[0-9]$"}, "文本": {"type": "string", "minLength": 1}, "说话人": {"type": ["string", "null"], "pattern": "^H[0-9]{2,}$"}, "形态": {"enum": ["画内", "画外", "心声", "设备", null]}, "待核对": {"type": "string"}}, "required": ["id", "起", "止", "文本", "说话人", "形态"], "additionalProperties": false}}, "关键动作": {"type": "array", "items": {"type": "object", "properties": {"id": {"type": "string", "pattern": "^M[0-9]{2,}$"}, "起": {"type": "string", "pattern": "^[0-9]{2,}:[0-5][0-9]\\.[0-9]$"}, "止": {"type": "string", "pattern": "^[0-9]{2,}:[0-5][0-9]\\.[0-9]$"}, "执行者": {"type": ["string", "null"], "pattern": "^H[0-9]{2,}$"}, "动作": {"type": "string", "minLength": 1}, "对象": {"type": ["string", "null"]}, "物件": {"type": ["string", "null"]}, "结果": {"type": ["string", "null"]}, "类别": {"type": "integer", "minimum": 1, "maximum": 5}, "待核对": {"type": "string"}}, "required": ["id", "起", "止", "执行者", "动作", "对象", "物件", "结果", "类别"], "additionalProperties": false}}}, "required": ["集", "视频", "人物", "台词", "关键动作"], "additionalProperties": false}}</script><script>'use strict';
+
+function seconds(time) {
+  const [m, s] = time.split(':').map(Number);
+  return m * 60 + s;
+}
+
+// 仅使用标注 Schema 中的关键字；Schema 随页面嵌入，无需联网。
+function checkSchema(value, schema, path = '标注') {
+  const types = schema.type ? [].concat(schema.type) : [];
+  const isType = type => type === 'null' ? value === null :
+    type === 'array' ? Array.isArray(value) :
+    type === 'object' ? value !== null && !Array.isArray(value) && typeof value === 'object' :
+    type === 'integer' ? Number.isInteger(value) : typeof value === type;
+  if (types.length && !types.some(isType)) throw Error(`${path}：类型不符`);
+  if (schema.enum && !schema.enum.includes(value)) throw Error(`${path}：取值不符`);
+  if (typeof value === 'string') {
+    if (schema.pattern && !new RegExp(schema.pattern).test(value)) throw Error(`${path}：格式不符`);
+    if (schema.minLength && Array.from(value).length < schema.minLength) throw Error(`${path}：不能为空`);
+  }
+  if (typeof value === 'number' && ((schema.minimum !== undefined && value < schema.minimum) ||
+      (schema.maximum !== undefined && value > schema.maximum))) throw Error(`${path}：超出范围`);
+  if (Array.isArray(value)) value.forEach((row, i) => checkSchema(row, schema.items, `${path}[${i}]`));
+  if (value !== null && !Array.isArray(value) && typeof value === 'object') {
+    for (const key of schema.required || []) if (!(key in value)) throw Error(`${path}：缺少 ${key}`);
+    for (const key of Object.keys(value)) {
+      if (schema.additionalProperties === false && !(key in schema.properties)) throw Error(`${path}：未知字段 ${key}`);
+      if (schema.properties[key]) checkSchema(value[key], schema.properties[key], `${path}.${key}`);
+    }
+  }
+}
+
+function buildAnnotation(state, schema) {
+  const result = JSON.parse(JSON.stringify(state));
+  checkSchema(result, schema);
+  const people = new Set(result.人物.map(row => row.id));
+  for (const key of ['人物', '台词', '关键动作']) {
+    const ids = new Set();
+    for (const row of result[key]) {
+      if (ids.has(row.id)) throw Error(`${key}：编号 ${row.id} 重复`);
+      ids.add(row.id);
+      if ('起' in row && seconds(row.止) < seconds(row.起)) throw Error(`${row.id}：结束早于开始`);
+      for (const span of row.出现 || []) {
+        const [start, end] = span.split('-');
+        if (seconds(end) < seconds(start)) throw Error(`${row.id}：出现时间倒置`);
+      }
+      for (const field of ['说话人', '执行者', '对象']) {
+        const id = row[field];
+        if (id && /^H[0-9]+$/.test(id) && !people.has(id)) throw Error(`${row.id}：人物 ${id} 未登记`);
+      }
+      if (result.校对完成 && (row.待核对 ||
+          (key === '台词' && (!row.说话人 || !row.形态)) ||
+          (key === '关键动作' && !row.执行者))) throw Error(`${row.id}：仍有待核对内容`);
+    }
+  }
+  result.台词.sort((a, b) => seconds(a.起) - seconds(b.起));
+  result.关键动作.sort((a, b) => seconds(a.起) - seconds(b.起));
+  return result;
+}
+
+if (typeof module !== 'undefined') module.exports = {buildAnnotation, checkSchema};
+
+if (typeof document !== 'undefined') {
+  const payload = JSON.parse(document.getElementById('sheet-data').textContent);
+  let state = payload.annotation;
+  const schema = payload.schema;
+  const $ = id => document.getElementById(id);
+  const status = message => { $('status').textContent = message; };
+  function el(tag, text, parent) {
+    const node = document.createElement(tag);
+    if (text !== null) node.textContent = text;
+    if (parent) parent.append(node);
+    return node;
+  }
+  function field(parent, row, key, options = null, convert = value => value) {
+    const label = el('label', key, parent);
+    const input = el(options ? 'select' : key === '文本' || key === '动作' || key === '外观' ? 'textarea' : 'input', null, label);
+    if (options) for (const [value, name] of options) {
+      const option = el('option', name, input);
+      option.value = value;
+    }
+    input.value = Array.isArray(row[key]) ? row[key].join('，') : row[key] ?? '';
+    const update = () => { row[key] = convert(input.value); status('有未导出的修改'); };
+    input.addEventListener('input', update);
+    input.addEventListener('change', () => {
+      update();
+      if (key === '名称' || key === 'id') render();
+    });
+    return input;
+  }
+  const nullable = value => value.trim() || null;
+  function personOptions() {
+    return [['', '待核对'], ...state.人物.map(row => [row.id, `${row.id} ${row.名称}`])];
+  }
+  function editor(parent, row, kind) {
+    const box = el('fieldset', null, parent);
+    box.dataset.kind = kind;
+    box.dataset.id = row.id;
+    el('legend', row.id, box);
+    const grid = el('div', null, box);
+    grid.className = 'fields';
+    field(grid, row, 'id');
+    if (kind === '人物') {
+      field(grid, row, '名称'); field(grid, row, '外观');
+      field(grid, row, '出现', null, value => value.split(/[，,\n]/).map(x => x.trim()).filter(Boolean));
+    } else {
+      field(grid, row, '起'); field(grid, row, '止');
+      if (kind === '台词') {
+        field(grid, row, '文本');
+        field(grid, row, '说话人', personOptions(), nullable);
+        field(grid, row, '形态', [['', '待核对'], ...['画内', '画外', '心声', '设备'].map(x => [x, x])], nullable);
+      } else {
+        field(grid, row, '执行者', personOptions(), nullable);
+        for (const key of ['动作', '对象', '物件', '结果']) field(grid, row, key, null, key === '动作' ? value => value : nullable);
+        field(grid, row, '类别', [[1, '1 物品交接'], [2, '2 身体接触'], [3, '3 位置变化'], [4, '4 关联对白'], [5, '5 可见结果']], Number);
+      }
+    }
+    field(grid, row, '待核对');
+    const remove = el('button', `删除 ${row.id}`, box);
+    remove.type = 'button';
+    remove.addEventListener('click', () => {
+      if (!confirm(`删除 ${row.id}？`)) return;
+      state[kind].splice(state[kind].indexOf(row), 1);
+      render(); status(`已删除 ${row.id}；尚未导出`);
+    });
+  }
+  function overlaps(a, b) {
+    return seconds(a.起) < seconds(b.止) && seconds(a.止) >= seconds(b.起);
+  }
+  function render() {
+    $('complete').checked = !!state.校对完成;
+    for (const id of ['people', 'actions', 'shots', 'unplaced']) $(id).replaceChildren();
+    for (const row of state.人物) editor($('people'), row, '人物');
+    for (const row of state.关键动作) editor($('actions'), row, '关键动作');
+    const placed = new Set();
+    for (const shot of payload.shots) {
+      const article = el('article', null, $('shots'));
+      article.className = 'shot'; article.dataset.shot = shot.id;
+      el('h3', `${shot.id}　${shot.起}—${shot.止}`, article);
+      const seek = el('button', '定位到这个镜头', article);
+      seek.type = 'button';
+      seek.addEventListener('click', () => { $('video').currentTime = seconds(shot.起); $('video').focus(); });
+      const strip = el('div', null, article); strip.className = 'frames';
+      for (const frame of shot.frames) {
+        const figure = el('figure', null, strip);
+        const link = el('a', null, figure); link.href = frame.src;
+        const image = el('img', null, link);
+        image.src = frame.src; image.alt = `${shot.id} ${frame.时间} 参考帧`; image.loading = 'lazy';
+        el('figcaption', frame.时间, figure);
+      }
+      const local = state.台词.filter(row => overlaps(row, shot));
+      for (const row of local) {
+        if (!placed.has(row.id)) { editor(article, row, '台词'); placed.add(row.id); }
+        else el('p', `${row.id} 跨镜头延续：${row.文本}（在首次出现镜头编辑）`, article);
+      }
+    }
+    for (const row of state.台词) if (!placed.has(row.id)) editor($('unplaced'), row, '台词');
+    $('counts').textContent = `${payload.shots.length} 个镜头；${state.台词.length} 条台词；${state.人物.length} 个人物；${state.关键动作.length} 个关键动作`;
+  }
+  function nextId(key, prefix, width) {
+    return prefix + String(Math.max(0, ...state[key].map(row => Number(row.id.slice(1)) || 0)) + 1).padStart(width, '0');
+  }
+  $('add-person').onclick = () => {
+    state.人物.push({id: nextId('人物', 'H', 2), 名称: '', 外观: '', 出现: [], 待核对: ''});
+    render(); $('people').lastElementChild.querySelector('input').focus();
+  };
+  $('add-action').onclick = () => {
+    state.关键动作.push({id: nextId('关键动作', 'M', 3), 起: '00:00.0', 止: '00:00.1', 执行者: null, 动作: '', 对象: null, 物件: null, 结果: null, 类别: 1, 待核对: ''});
+    render(); $('actions').lastElementChild.querySelector('input').focus();
+  };
+  $('add-line').onclick = () => {
+    state.台词.push({id: nextId('台词', 'L', 3), 起: '00:00.0', 止: '00:00.1', 文本: '', 说话人: null, 形态: null, 待核对: ''});
+    render(); $('shots').querySelector('fieldset:last-of-type input')?.focus();
+  };
+  $('complete').onchange = event => { state.校对完成 = event.target.checked; status('有未导出的修改'); };
+  $('refresh').onclick = render;
+  $('import').onchange = async event => {
+    const file = event.target.files[0];
+    if (!file) return;
+    try {
+      const loaded = buildAnnotation(JSON.parse(await file.text()), schema);
+      if (loaded.集 !== state.集 || loaded.视频 !== state.视频) throw Error('导入文件与当前视频不一致');
+      if (!confirm('用导入文件替换页面中尚未导出的修改？')) return;
+      state = loaded; render(); status('已载入标注');
+    } catch (error) { status(error.message); }
+  };
+  $('export').onclick = () => {
+    try {
+      const data = buildAnnotation(state, schema);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2) + '\n'], {type: 'application/json'}));
+      const link = el('a', null, document.body);
+      link.href = url; link.download = '标注.json'; link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      status('标注.json 已导出');
+    } catch (error) { status(error.message); $('status').focus(); }
+  };
+  window.addEventListener('beforeunload', event => { event.preventDefault(); event.returnValue = ''; });
+  render();
+}
+</script></body></html>
