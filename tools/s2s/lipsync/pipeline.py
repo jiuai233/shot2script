@@ -24,6 +24,15 @@ from .core import (Parameters, attach_detections, face_measurement, frame_indice
                    group_tracks, pair_voices, score_samples, sentence_conclusion, combine_scores)
 
 
+
+def _clip_box(box):
+    """把归一化 [x, y, width, height] 裁到画面内；None 原样返回。"""
+    if box is None:
+        return None
+    x0, y0 = max(0.0, float(box[0])), max(0.0, float(box[1]))
+    x1, y1 = min(1.0, float(box[0]) + float(box[2])), min(1.0, float(box[1]) + float(box[3]))
+    return [round(x0, 5), round(y0, 5), round(max(0.0, x1 - x0), 5), round(max(0.0, y1 - y0), 5)]
+
 def dump(path, data):
     Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
@@ -255,12 +264,16 @@ def run(video, episode, output, params=None, review=False, model="models/lipsync
             score, status, conflict = combine_scores(rule_score, rule_status, model_score, len(model_curve), variant, params)
             evidence.update({"规则分数": rule_score, "规则状态": rule_status, "模型有效帧": len(model_curve), "评分冲突": conflict})
             box = np.median([s["box"] for s in selected], axis=0)
+            # 人脸贴近画面边缘时检测框会越出画面；输出前裁到画面内。
+            x0, y0 = max(0.0, float(box[0])), max(0.0, float(box[1]))
+            x1, y1 = min(1.0, float(box[0] + box[2])), min(1.0, float(box[1] + box[3]))
+            box = [x0, y0, max(0.0, x1 - x0), max(0.0, y1 - y0)]
             row["轨迹"].append({"id": track["id"], "轨迹组": track["group"],
                                   "框": dict(zip(("x", "y", "width", "height"), [round(float(v), 5) for v in box])),
                                   "说话分数": score, "规则分数": rule_score, "模型分数": None if model_score is None else round(model_score, 5),
                                   "模型曲线": [{"时间": timecode(s["time"]), "说话概率": round(s["probability"], 5)} for s in model_curve],
                                   "检测来源": sorted({s.get("source", "MediaPipe") for s in selected}),
-                                  "嘴部区域": next((s["mouth_box"] for s in selected if "mouth_box" in s), None),
+                                  "嘴部区域": _clip_box(next((s["mouth_box"] for s in selected if "mouth_box" in s), None)),
                                   "状态": status, "评分依据": evidence,
                                   "不可用原因": sorted({r for s in selected for r in s["reason"]}),
                                   "依据帧": reference_paths(selected),
@@ -283,7 +296,7 @@ def run(video, episode, output, params=None, review=False, model="models/lipsync
     serialized_tracks = [{"id": t["id"], "镜头": t["shot"], "轨迹组": t["group"],
                           "样本": [{"时间": timecode(s["time"]), "框": s["box"], "张合比": s["mar"],
                                     "有效": s["valid"], "原因": s["reason"], "yaw": s["yaw"], "pitch": s["pitch"], "文件": s["path"],
-                                    "检测来源": s.get("source", "MediaPipe"), "嘴部区域": s.get("mouth_box")}
+                                    "检测来源": s.get("source", "MediaPipe"), "嘴部区域": _clip_box(s.get("mouth_box"))}
                                    for s in t["samples"]]} for t in tracks]
     dump(folder / "轨迹.json", serialized_tracks)
     counts = {name: sum(r["结论"] == name for r in rows) for name in ("画内", "未开口", "看不到", "存疑")}

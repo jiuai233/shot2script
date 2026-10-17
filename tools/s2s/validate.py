@@ -13,12 +13,14 @@ TYPE_ALIASES = {'roles': '角色卡', 'shots': '镜头表', 'segments': '片段�
     'attribution': '归属表', 'pending': '待核对', 'issues': '问题清单',
     'mapping': '对照表', 'state': '状态', 'series_state': '全剧状态',
     'temporary_people': '临时人物', 'role_changes': '角色变更申请', 'dense_frames': '加密帧索引',
-    '帧': '加密帧索引'}
+    '帧': '加密帧索引', 'lipsync': '口型记录', 'diarization': '声纹聚类',
+    'voiceprint_candidates': '声纹候选', 'speech_regions': '人声段', 'decision_migrations': '裁定迁移'}
+CURVE_TIME_RE = re.compile(r'^[0-9]{2}:[0-5][0-9]\.(?:[0-9]|[0-9]{3})$')
 TIME_RE = re.compile(r'^[0-9]{2}:[0-5][0-9]\.[0-9]$')
 ID_RE = re.compile(r'^E([0-9]{2,})-([SKAQPVTR])([0-9]+)(?:-T([1-9][0-9]*))?$')
 ID_FIELDS = {'id', '标签', '声线', '镜头', '句', '动作', '执行者', '对象', '说话人',
              '相关人物', '衔接前', '衔接后', '首次出场', '未决问题', '本集新增人物',
-             '片段', '出现镜头', '映射', '涉及角色'}
+             '片段', '出现镜头', '映射', '涉及角色', '新句号', 'cannot-link'}
 
 
 def time_seconds(value: str) -> float:
@@ -112,6 +114,67 @@ def _check_segments(data, source, fail):
                 fail(('片段', i, field), f'{field}必须是相邻片段边界镜头：{expected}')
 
 
+def _check_lipsync(data, sound, file, reference, fail):
+    by_id = {r['id']: r for r in _items(sound)
+             if isinstance(r, dict) and isinstance(r.get('id'), str)}
+    for i, row in enumerate(_items(data, '句')):
+        if not isinstance(row, dict) or not isinstance(row.get('句'), str):
+            continue
+        source = by_id.get(row['句'])
+        if source:
+            for field in ('文本', '起', '止'):
+                if field in row and row[field] != source.get(field):
+                    fail(('句', i, field), f'{field}与同目录声音记录不一致')
+        seen = set()
+        for j, track in enumerate(_items(row, '轨迹')):
+            if not isinstance(track, dict) or not isinstance(track.get('id'), str):
+                continue
+            if not re.fullmatch(r'E[0-9]{2,}-K[0-9]{3,}-F[1-9][0-9]*', track['id']):
+                continue
+            path = ('句', i, '轨迹', j, 'id')
+            if track['id'] in seen:
+                fail(path, f'轨迹编号重复：{track["id"]}')
+            seen.add(track['id'])
+            shot_id = track['id'].rsplit('-F', 1)[0]
+            reference(path, shot_id, '镜头表')
+            if isinstance(row.get('镜头'), list) and shot_id not in row['镜头']:
+                fail(path, '轨迹所属镜头未列在本句镜头中')
+    # 路径保留生产端写法：绝对路径、本集相对路径、项目相对路径。
+    for path, value in _walk(data):
+        if len(path) >= 2 and path[-2] == '依据帧' and isinstance(value, str):
+            frame = Path(value)
+            candidates = [frame] if frame.is_absolute() else [file.parent / frame, frame]
+            if not any(p.is_file() for p in candidates):
+                fail(path, f'依据帧文件不存在：{value}')
+
+
+def _check_diarization(data, fail):
+    rows, categories = data['句列表'], data['类别']
+    voices = [c['声线'] for c in categories]
+    for i, row in enumerate(rows):
+        if not row['待定'] and row['声线'] not in voices:
+            fail(('句列表', i, '声线'), '声线未在类别中声明')
+    for i, category in enumerate(categories):
+        members = [r for r in rows if r['声线'] == category['声线']]
+        if category['句数'] != len(members):
+            fail(('类别', i, '句数'), '类别句数与句列表不一致')
+        if category['聚类句数'] > category['句数']:
+            fail(('类别', i, '聚类句数'), '聚类句数不得超过类别句数')
+        if all('参与聚类' in r for r in members):
+            if category['聚类句数'] != sum(r['参与聚类'] for r in members):
+                fail(('类别', i, '聚类句数'), '聚类句数与句列表不一致')
+        ids = {r['句'] for r in members}
+        for j, row in enumerate(category['代表句']):
+            if row['句'] not in ids:
+                fail(('类别', i, '代表句', j, '句'), '代表句不属于当前类别')
+    order = data['矩阵声线顺序']
+    if set(order) != set(voices):
+        fail(('矩阵声线顺序',), '矩阵声线顺序必须恰好包含全部类别声线')
+    matrix = data['类间相似度矩阵']
+    if len(matrix) != len(order) or any(len(row) != len(order) for row in matrix):
+        fail(('类间相似度矩阵',), '类间相似度矩阵维度与矩阵声线顺序不一致')
+
+
 def validate_file(file: str | Path, data_type: str | None = None) -> dict:
     file = Path(file)
     errors = []
@@ -153,6 +216,9 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
     # 类型错误由 Schema 报出；只对类型正确的局部值进行语义检查。
     parent_ep = _episode_from_path(file)
     top_ep = data.get('集') if isinstance(data, dict) and isinstance(data.get('集'), int) else None
+    if kind == '声纹候选' and isinstance(data, dict) and isinstance(data.get('集'), str):
+        if re.fullmatch(r'E[0-9]{2,}', data['集']):
+            top_ep = int(data['集'][1:])
     episode = parent_ep if parent_ep is not None else top_ep
     if parent_ep is not None and top_ep is not None and parent_ep != top_ep:
         fail(('集',), f'集号 {top_ep} 与目录 E{parent_ep:02d} 不一致')
@@ -177,8 +243,10 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
                 if time_seconds(start) > time_seconds(end):
                     fail(path, '起晚于止')
             for key, child in value.items():
-                if key in ('起', '止', '时间', '时长') and isinstance(child, str) and not TIME_RE.fullmatch(child):
-                    fail((*path, key), '时间须为 MM:SS.s')
+                time_pattern = (CURVE_TIME_RE if kind == '口型记录' and key == '时间'
+                                and any(p in ('曲线', '模型曲线') for p in path) else TIME_RE)
+                if key in ('起', '止', '时间', '时长') and isinstance(child, str) and not time_pattern.fullmatch(child):
+                    fail((*path, key), '曲线时间须为 MM:SS.s 或 MM:SS.sss' if time_pattern is CURVE_TIME_RE else '时间须为 MM:SS.s')
                 times_and_episode(child, (*path, key), local_ep)
         elif isinstance(value, list):
             for i, child in enumerate(value):
@@ -194,9 +262,11 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
                     fail(path, f'场景集号与第 {local_ep} 集不一致')
     times_and_episode(data)
 
-    item_field = {'镜头表': '镜头', '片段表': '片段', '全剧状态': '集'}.get(kind)
+    item_field = {'镜头表': '镜头', '片段表': '片段', '全剧状态': '集',
+                  '口型记录': '句', '声纹聚类': '句列表', '声纹候选': '声线'}.get(kind)
     records = _items(data, item_field)
-    key = {'归属表': '句', '对照表': '行', '全剧状态': '集'}.get(kind, 'id')
+    key = {'归属表': '句', '对照表': '行', '全剧状态': '集', '口型记录': '句',
+           '声纹聚类': '句', '声纹候选': '声线', '裁定迁移': '新句号'}.get(kind, 'id')
     seen = set()
     for i, record in enumerate(records):
         if isinstance(record, dict) and isinstance(record.get(key), (str, int)):
@@ -207,15 +277,22 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
 
     companions = {}
     script_scenes = None
+    board_dir = file.parent
+    if kind in ('人声段', '裁定迁移'):
+        board_dir = next((p.parent for p in file.parents if p.name == '素材'), file.parent)
+    candidate_roles = (board_dir.parent if re.fullmatch(r'E[0-9]{2,}', board_dir.name)
+                       else board_dir) / '角色卡.json'
 
     def load_companion(target_kind, target_ep=None):
-        target_file = file.parent / f'{target_kind}.json'
+        target_file = board_dir / f'{target_kind}.json'
         if target_kind == '角色卡':
-            target_file = file.parent / '角色卡.json'
-            if not target_file.exists():
-                target_file = file.parent.parent / '角色卡.json'
+            target_file = board_dir / '角色卡.json'
+            if kind == '声纹候选':
+                target_file = candidate_roles
+            elif not target_file.exists():
+                target_file = board_dir.parent / '角色卡.json'
         elif target_ep is not None and (episode != target_ep or kind == '角色卡'):
-            series = file.parent.parent if _episode_from_path(file) is not None else file.parent
+            series = board_dir.parent if _episode_from_path(file) is not None else board_dir
             target_file = series / f'E{target_ep:02d}' / f'{target_kind}.json'
         if target_kind == kind and target_file.resolve() == file.resolve():
             source = data
@@ -254,7 +331,8 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
     ref_fields = {'镜头': '镜头表', '衔接前': '镜头表', '衔接后': '镜头表',
                   '首次出场': '镜头表', '句': '声音记录', '动作': '动作记录',
                   '未决问题': '问题', '本集新增人物': '角色卡',
-                  '片段': '片段表', '出现镜头': '镜头表'}
+                  '片段': '片段表', '出现镜头': '镜头表', '新句号': '声音记录',
+                  'cannot-link': '声音记录'}
     for path, value in _walk(data):
         if not path or not isinstance(value, str):
             continue
@@ -275,6 +353,8 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
                             break
             if value not in script_scenes:
                 fail(path, f'引用场景不存在：{value}（工作稿或正式稿）')
+        if kind == '声纹候选' and field == '角色' and candidate_roles.exists():
+            reference(path, value, '角色卡')
         # id、描述、依据等都不是引用字段。
         if field == '动作' and kind != '对照表':
             continue
@@ -294,6 +374,11 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
                 reference(path, value, '角色卡')
             elif re.fullmatch(r'E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*', value):
                 reference(path, value, '临时人物')
+    if kind == '口型记录':
+        source, problem = load_companion('声音记录')
+        if problem:
+            fail(('句',), problem)
+        _check_lipsync(data, source, file, reference, fail)
     if schema_valid:
         if kind == '镜头表':
             _check_shots(data, fail)
@@ -311,6 +396,21 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
             for i, person in enumerate(data):
                 if person['id'].rsplit('-T', 1)[0] != person['片段']:
                     fail((i, '片段'), '临时人物编号与所属片段不一致')
+        elif kind == '声纹聚类':
+            _check_diarization(data, fail)
+            seen_voices = set()
+            for i, category in enumerate(data['类别']):
+                if category['声线'] in seen_voices:
+                    fail(('类别', i, '声线'), f'声线重复：{category["声线"]}')
+                seen_voices.add(category['声线'])
+        elif kind == '人声段':
+            for i, region in enumerate(data):
+                if region['起'] > region['止']:
+                    fail((i,), '起晚于止')
+                if i and region['起'] < data[i - 1]['起']:
+                    fail((i, '起'), '人声段未按起点排序')
+                if i and region['起'] < data[i - 1]['止']:
+                    fail((i, '起'), '人声段重叠')
         if kind == '状态':
             seen_requests = set()
             for i, request in enumerate(data['角色变更申请']):

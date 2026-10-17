@@ -1,0 +1,313 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "声纹聚类",
+  "type": "object",
+  "properties": {
+    "句列表": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/句"
+      }
+    },
+    "类别": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/类别"
+      }
+    },
+    "类间相似度矩阵": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        }
+      }
+    },
+    "矩阵声线顺序": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^E[0-9]{2,}-V[1-9][0-9]*$"
+      },
+      "uniqueItems": true
+    },
+    "置信度说明": {
+      "type": "string"
+    },
+    "约束": {
+      "type": "object",
+      "properties": {
+        "参数": {
+          "type": "object"
+        },
+        "冲突": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "cannot-link": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        },
+        "must-link数": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "Grok覆盖句数": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "参数",
+        "冲突",
+        "cannot-link",
+        "must-link数",
+        "Grok覆盖句数"
+      ],
+      "additionalProperties": false
+    },
+    "输入可用性": {
+      "type": "object",
+      "properties": {
+        "Grok词数": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "口型记录": {
+          "type": "boolean"
+        },
+        "人数上限": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "Grok词数",
+        "口型记录",
+        "人数上限"
+      ],
+      "additionalProperties": false
+    },
+    "运行": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "句列表",
+    "类别",
+    "类间相似度矩阵",
+    "矩阵声线顺序"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "句": {
+      "type": "object",
+      "properties": {
+        "句": {
+          "type": "string",
+          "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"
+        },
+        "文本": {
+          "type": "string"
+        },
+        "起": {
+          "type": "string",
+          "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+        },
+        "止": {
+          "type": "string",
+          "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+        },
+        "声线": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^E[0-9]{2,}-V[1-9][0-9]*$"
+            },
+            {
+              "const": "待定"
+            }
+          ]
+        },
+        "相似度": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "置信度": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "合并依据": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "voiceprint",
+              "grok",
+              "lipsync",
+              "max_speakers"
+            ]
+          },
+          "uniqueItems": true
+        },
+        "待定": {
+          "type": "boolean"
+        },
+        "疑似重叠": {
+          "type": "boolean"
+        },
+        "重叠依据": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "前后半句相似度": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": -1,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "参与聚类": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "句",
+        "文本",
+        "起",
+        "止",
+        "声线",
+        "相似度",
+        "置信度",
+        "合并依据",
+        "待定",
+        "疑似重叠",
+        "重叠依据"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "待定": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "声线": {
+                "const": "待定"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "声线": {
+                "type": "string",
+                "pattern": "^E[0-9]{2,}-V[1-9][0-9]*$"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "类别": {
+      "type": "object",
+      "properties": {
+        "声线": {
+          "type": "string",
+          "pattern": "^E[0-9]{2,}-V[1-9][0-9]*$"
+        },
+        "句数": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "聚类句数": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "代表句": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "句": {
+                "type": "string",
+                "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"
+              },
+              "文本": {
+                "type": "string"
+              },
+              "起": {
+                "type": "string",
+                "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+              },
+              "止": {
+                "type": "string",
+                "pattern": "^[0-9]{2}:[0-5][0-9]\\.[0-9]$"
+              }
+            },
+            "required": [
+              "句",
+              "文本",
+              "起",
+              "止"
+            ],
+            "additionalProperties": false
+          },
+          "maxItems": 3
+        }
+      },
+      "required": [
+        "声线",
+        "句数",
+        "聚类句数",
+        "代表句"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

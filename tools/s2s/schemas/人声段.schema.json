@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "人声段",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "起": {
+        "type": "number",
+        "minimum": 0
+      },
+      "止": {
+        "type": "number",
+        "minimum": 0
+      }
+    },
+    "required": [
+      "起",
+      "止"
+    ],
+    "additionalProperties": false
+  }
+}

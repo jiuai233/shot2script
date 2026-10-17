@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "裁定迁移",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "properties": {
+      "新句号": {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "旧句号": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"
+        },
+        "minItems": 1,
+        "uniqueItems": true
+      },
+      "状态": {
+        "enum": [
+          "已沿用",
+          "待确认",
+          "未匹配"
+        ]
+      },
+      "原裁定": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "新句号",
+      "旧句号",
+      "状态",
+      "原裁定"
+    ],
+    "additionalProperties": false
+  }
+}
