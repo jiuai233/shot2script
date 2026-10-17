@@ -18,7 +18,8 @@ jobs:
         with:
           python-version: '3.13'
       - name: Prepare dependencies for isolated offline tests
-        run: python -m pip download --no-deps --only-binary=:all: --dest test-wheels 'scenedetect==0.6.7.1' 'sherpa-onnx==1.13.8' 'sherpa-onnx-core==1.13.8'
+        run: |
+          python -m pip download --no-deps --only-binary=:all: --dest test-wheels 'scenedetect==0.6.7.1' 'sherpa-onnx==1.13.8' 'sherpa-onnx-core==1.13.8'
       - uses: actions/upload-artifact@v4
         with:
           name: offline-test-wheels
