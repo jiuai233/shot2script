@@ -25,7 +25,7 @@ FORBIDDEN_STYLE = {
 PENDING_SPEAKER_RE = re.compile(r'^【说话人待核对 E[0-9]{2,}-Q[0-9]{3,}】$')
 PENDING_NOTE_RE = re.compile(r'【待核对 (E[0-9]{2,}-Q[0-9]{3,})】')
 FINAL_PATTERNS = (re.compile(r'【(?:说话人)?待核对[^】]*'), re.compile(r'[0-9]{2}:[0-9]{2}'),
-                  re.compile(r'E[0-9]{2,}-[SKAQP][0-9]*'))
+                  re.compile(r'E[0-9]{2,}-[SKAQPN][0-9]*'))
 
 
 def parse_dialogue(line: str) -> tuple[str, str, str] | None:

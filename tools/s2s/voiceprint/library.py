@@ -103,7 +103,7 @@ def enroll(drama, episode, source=None, model="campp", *, extracted=None):
     skipped = []
     for row, vector in zip(records, vectors):
         owner = lookup.get(row["id"], {})
-        if not re.fullmatch(r"C\d{3,}", owner.get("说话人", "")) or owner.get("确定度") != "确认" or vector is None or row.get("听辨") != "清楚" or row.get("核对", {}).get("状态") == "待核对":
+        if not re.fullmatch(r"C\d{3,}", owner.get("说话人") or "") or owner.get("确定度") != "确认" or vector is None or row.get("听辨") != "清楚" or row.get("核对", {}).get("状态") == "待核对":
             skipped.append(row["id"])
             continue
         by_role[owner["说话人"]].append(vector)

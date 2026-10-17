@@ -134,6 +134,10 @@ def finish_review(episode, output, parts, coverage, *, version, simulated=False)
 def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path,
              *, mode=None, scope=None, timeout=300, call=None, validator=None, prompt_file=None, _review_stage=None):
     episode, output = Path(episode).resolve(), Path(output).resolve()
+    if role == '角色卡' and (mode or variables.get('模式', '建立')) == '建立':
+        from .rolecard import establish_rolecard
+        return establish_rolecard(episode, variables, output, timeout=timeout, call=call,
+                                  validator=validator, prompt_file=prompt_file)
     if role == '验收' and (mode or variables.get('模式', '全文审查')) == '全文审查' and _review_stage is None:
         return review_full(episode, variables, output, timeout=timeout, call=call, validator=validator, prompt_file=prompt_file)
     started = time.monotonic()
@@ -205,6 +209,9 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                               + '\n请修正这些错误，重新返回完整结果，不省略其他字段。'
                               + ('每次重答都是新调用，必须重新查看全部附图。' if direct
                                  else '每次重答都是新调用，必须重新读取全部授权帧，不能只补读遗漏帧。'))
+        if role == '角色卡' and (package.signature() != {k: v for k, v in signature.items() if k != '模型'}
+                               or settings_for(role, package) != signature['模型']):
+            raise DispatchError('角色卡输入在核对期间变化，结果不发布')
         output.parent.mkdir(parents=True, exist_ok=True)
         # 主控决定目标路径；先校验成功才替换旧结果。
         temporary = output.with_name(output.name + '.new')
@@ -229,19 +236,29 @@ def main():
     parser = argparse.ArgumentParser(description='按资料隔离规则派发一个子 agent')
     parser.add_argument('角色', choices=('动作识别', '角色卡', '成稿', '验收'))
     parser.add_argument('--集', required=True)
-    parser.add_argument('--变量', required=True, help='JSON 对象；动作识别必须包含片段号')
+    parser.add_argument('--变量', help='JSON 对象；动作识别必须包含片段号')
     parser.add_argument('--模式')
     parser.add_argument('--范围')
-    parser.add_argument('--输出', required=True)
+    parser.add_argument('--输出')
+    parser.add_argument('--应用结果', help='只应用已完成的角色卡两阶段结果，不调用模型')
+    parser.add_argument('--审核', help='主控显式审核JSON，含结果版本、输入版本、批准数组')
     parser.add_argument('--提示词', help='对比试验提示词文件，默认使用正式提示词')
     parser.add_argument('--超时', type=float, default=300)
     args = parser.parse_args()
     try:
-        variables = load(Path(args.变量))
-        if not isinstance(variables, dict):
-            raise ValueError('变量文件必须为 JSON 对象')
-        result = dispatch(args.角色, args.集, variables, args.输出,
-                          mode=args.模式, scope=args.范围, timeout=args.超时, prompt_file=args.提示词)
+        if args.应用结果:
+            if args.角色 != '角色卡' or not args.审核 or args.变量 or args.输出 or args.模式 or args.范围 or args.提示词:
+                raise ValueError('应用结果只允许角色卡，必须显式提供--审核，不混用派发参数')
+            from .rolecard import apply_rolecard_result
+            result = apply_rolecard_result(args.集, args.应用结果, args.审核)
+        else:
+            if not args.变量 or not args.输出 or args.审核:
+                raise ValueError('派发必须提供--变量和--输出；--审核仅用于--应用结果')
+            variables = load(Path(args.变量))
+            if not isinstance(variables, dict):
+                raise ValueError('变量文件必须为 JSON 对象')
+            result = dispatch(args.角色, args.集, variables, args.输出,
+                              mode=args.模式, scope=args.范围, timeout=args.超时, prompt_file=args.提示词)
     except (OSError, ValueError, RuntimeError) as exc:
         result = {'通过': False, '错误': _safe(str(exc), config.get_environment())}
     print(json.dumps(result, ensure_ascii=False))

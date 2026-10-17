@@ -42,8 +42,8 @@
 | 人声检测 | 本地 FSMN-VAD |
 | 声纹 | 本地 CAM++（sherpa-onnx） |
 | 口型 | 本地 MediaPipe、YuNet、Light-ASD |
-| 识图 | `deepseek/deepseek-flash`，思考级别 high。动作识别和验收的读图直接调用 DeepSeek 官方接口，授权帧一次送入并逐张标注（复核只送改动场景及相邻场景的帧）；角色卡经 pi 按白名单读帧 |
-| 角色 agent | pi 调用 `deepseek/deepseek-flash`，思考级别 high |
+| 识图 | `deepseek/deepseek-flash`，思考级别 high。动作识别、角色卡建立两阶段和验收读图直连 DeepSeek 官方接口，授权帧一次送入并逐张标注；角色卡建立先合并人物，再按片段判断对白归属。验收复核只送改动场景及相邻场景的帧 |
+| 角色 agent | 模型为 `deepseek/deepseek-flash`，思考级别 high；上述读图阶段直连，其余调用使用 pi。角色卡定向核对仍按白名单读帧 |
 
 所有生产生成式调用只允许 `deepseek/deepseek-flash`，默认值、角色覆盖、环境变量和重答均在调用前校验，不回退其他模型。字幕只作人工参考。实现及离线/真实验收状态见 `TODO.md`，真实识别质量须单独验收。
 

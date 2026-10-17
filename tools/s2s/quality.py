@@ -20,7 +20,7 @@ def review_version(directory):
     version = {}
     for name in ('工作稿.md', '对照表.json', '镜头表.json', '片段表.json', '声音记录.json',
                  '字幕记录.json', '动作记录.json', '归属表.json', '临时人物.json',
-                 '口型记录.json', '声纹聚类.json', '声纹候选.json'):
+                 '口型记录.json', '声纹聚类.json', '声纹候选.json', '本集人物.json'):
         path = directory / name
         version[name] = path.read_text(encoding='utf-8') if path.is_file() else None
     table = json.loads(version['镜头表.json'])
@@ -35,6 +35,8 @@ def review_version(directory):
                          ('临时人物.json', ('映射',))):
         for row in json.loads(version[name] or '[]'):
             referenced.update(row.get(field) for field in fields)
+    local_people = json.loads(version['本集人物.json'] or '{"人物": []}')['人物']
+    referenced.update(row['审核C'] for row in local_people if row['审核C'])
     version['角色卡'] = [{k: v for k, v in role.items() if k != '性格总结'} for role in roles
                        if role['id'] in referenced or role['名称'] in (version['工作稿.md'] or '')]
     version['帧'] = [[str(path.relative_to(directory)), path.stat().st_size, path.stat().st_mtime_ns]
@@ -133,10 +135,10 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
     data = {}
     try:
         text = script.read_text(encoding='utf-8')
-        for name in ('镜头表', '片段表', '声音记录', '动作记录', '归属表', '对照表', '待核对', '问题清单', '临时人物'):
+        for name in ('镜头表', '片段表', '声音记录', '动作记录', '归属表', '对照表', '待核对', '问题清单', '临时人物', '本集人物'):
             path = directory / (name + '.json')
-            if name == '临时人物' and not path.exists():
-                data[name] = []
+            if name in ('临时人物', '本集人物') and not path.exists():
+                data[name] = [] if name == '临时人物' else {'人物': []}
                 continue
             checked = validate_file(path, name)
             for error in checked['错误']:
@@ -171,8 +173,13 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
     names = {role['名称'] for role in roles}
     action_words = read_json(DEFAULT_WORDS)['动作词']
 
+    local_people = {row['id']: row for row in data['本集人物']['人物']}
+
     def person(ident):
-        return roles_by_id.get(temporary.get(ident) or ident)
+        ident = temporary.get(ident) or ident
+        if ident in local_people:
+            ident = local_people[ident]['审核C']
+        return roles_by_id.get(ident)
 
     def confirmed(ident):
         role = person(ident)
@@ -302,8 +309,8 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
     if formal:
         for row in pending.values():
             fail('未决问题', {'问题': row['id']}, '问题须修正或裁定并留下复核结果')
-        for role in roles:
-            if role['状态'] != '已确认':
+        for role in [*roles, *[r for r in local_people.values() if r['审核C'] is None]]:
+            if role.get('状态') != '已确认':
                 descriptions = [line.split('：', 1)[1] if line.startswith('人物：') else
                                 parse_dialogue(line)[0] + parse_dialogue(line)[1] if parse_dialogue(line)
                                 else line if line.startswith('△') and not line.startswith('△ 画面字幕：') else ''

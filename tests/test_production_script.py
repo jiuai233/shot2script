@@ -272,17 +272,17 @@ def test_invalid_draft_retry_preserves_previous_output(board):
     assert read_json(output) == {'旧结果': True}
 
 
-def test_new_role_name_and_mapping_are_checked(board):
-    packet = Package('', mode='建立')
-    data = {'模式': '建立', '临时人物映射': [], '新增人物': [], '补充资料': [],
+def test_targeted_role_result_cannot_change_frozen_mapping(board):
+    packet = Package('', mode='定向核对')
+    data = {'模式': '定向核对', '临时人物映射': [], '新增人物': [], '补充资料': [],
             '对白归属': read_json(board / '归属表.json'), '变更申请': [], '待核对': [], '性格总结': []}
     assert validate_result('角色卡', data, board, packet) == []
-    data['临时人物映射'] = [{'临时': 'E01-P01-T1', '映射': 'C999', '依据': '外观连续', '确定度': '确认'}]
-    assert any('未登记编号' in e for e in validate_result('角色卡', data, board, packet))
-    data['临时人物映射'][0]['映射'] = 'C001'
-    assert validate_result('角色卡', data, board, packet) == []
-    data['临时人物映射'].append(dict(data['临时人物映射'][0]))
-    assert any('重复映射' in e for e in validate_result('角色卡', data, board, packet))
+    data['对白归属'][0]['说话人'] = 'C999'
+    assert any('冻结人物表' in e for e in validate_result('角色卡', data, board, packet))
+    data['对白归属'] = read_json(board / '归属表.json')
+    data['临时人物映射'] = [{'临时': 'E01-P01-T1', '映射': 'C001', '依据': '外观连续', '确定度': '确认'}]
+    assert any('不得改变冻结分组' in e for e in validate_result('角色卡', data, board, packet))
+    assert any('两阶段建立入口' in e for e in validate_result('角色卡', data, board, Package('', mode='建立')))
 
 
 def test_quality_cli_returns_json(board):

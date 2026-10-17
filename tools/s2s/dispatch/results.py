@@ -75,6 +75,8 @@ def extract_result(role: str, text: str):
 
 
 def validate_result(role: str, data, episode: Path, package) -> list[str]:
+    if role == '角色卡' and package.mode in ('建立', '人物合并'):
+        return ['建立必须通过dispatch两阶段建立入口，不接受旧单次返回']
     schemas = load(Path(__file__).with_name('role_schemas.json'))
     errors = [f'{list(e.absolute_path)}: {e.message}'
               for e in Draft202012Validator(schemas[role]).iter_errors(data)]
@@ -88,7 +90,7 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
         context = Path(folder) / episode.name
         context.mkdir()
         for name in ('镜头表.json', '片段表.json', '声音记录.json', '字幕记录.json',
-                     '动作记录.json', '归属表.json', '待核对.json', '问题清单.json', '工作稿.md', '临时人物.json'):
+                     '动作记录.json', '归属表.json', '待核对.json', '问题清单.json', '工作稿.md', '临时人物.json', '本集人物.json'):
             source = episode / name
             if source.is_file():
                 (context / name).symlink_to(source.resolve())
@@ -182,28 +184,43 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
             quality = check_script(context)
             errors.extend(f'{e["检查项"]}{e["位置"]}: {e["问题"]}' for e in quality['错误'])
         elif role == '角色卡':
+            if data['临时人物映射'] or data['新增人物']:
+                errors.append('定向核对/总结不得改变冻结分组或新增人物')
+            if package.mode == '总结' and data['对白归属']:
+                errors.append('总结不得重新分配对白归属')
             for _, message in name_errors(data['新增人物']):
                 errors.append('新增人物名称：' + message)
-            known = {row['id'] for row in load(context / '角色卡.json')}
-            temporary_path = episode / '临时人物.json'
-            if temporary_path.is_file():
-                known.update(row['id'] for row in load(temporary_path))
-            seen = set()
-            for mapping in data['临时人物映射']:
-                if mapping['临时'] in seen:
-                    errors.append('临时人物重复映射：' + mapping['临时'])
-                seen.add(mapping['临时'])
-                if not mapping['依据'].strip():
-                    errors.append('临时人物映射缺少依据')
-                for field in ('临时', '映射'):
-                    if mapping[field] not in known:
-                        errors.append('人物映射引用未登记编号：' + mapping[field])
-
-            check('归属表', data['对白归属'])
-            if package.mode == '建立':
-                expected = [s['id'] for s in load(episode / '声音记录.json')]
-                if [r['句'] for r in data['对白归属']] != expected:
-                    errors.append('建立模式必须按顺序覆盖全部对白句')
+            from .rolecard import _validate_attribution
+            table_path = episode / '本集人物.json'
+            table = load(table_path) if table_path.exists() else {'人物': []}
+            confirmed = [r for r in load(context / '角色卡.json') if r['状态'] == '已确认']
+            allowed = {r['id'] for r in confirmed} | {r['id'] for r in table['人物']}
+            for row in data['补充资料']:
+                if row['角色'] not in allowed or not row['依据'].strip():
+                    errors.append('补充资料须绑定冻结人物表且有依据')
+                if '声线' in row and row['角色'] not in {r['id'] for r in confirmed}:
+                    errors.append('声线建议只能涉及已获批C')
+            sounds = load(episode / '声音记录.json')
+            shots = {s['id'] for s in load(episode / '镜头表.json')['镜头']}
+            references = {'句': {s['id'] for s in sounds}, '镜头': shots}
+            for row in data['待核对']:
+                position = row['位置']
+                if not set(position) <= references.keys() or any(
+                        not isinstance(value, str) or value not in references[kind]
+                        for kind, value in position.items() if kind in references):
+                    errors.append('资料待核对位置须引用合法本集句或镜头')
+                if not row['问题'].strip():
+                    errors.append('资料待核对问题不能为空')
+            wanted = {r['句'] for r in data['对白归属']}
+            batch = [s for s in sounds if s['id'] in wanted]
+            # 资料问题不必伪造对白修改；真正改归属的句仍走完整批次/同句阻断校验。
+            attribution_pending = [r for r in data['待核对']
+                                   if isinstance(r['位置'].get('句'), str) and r['位置']['句'] in wanted]
+            try:
+                _validate_attribution({'对白归属': data['对白归属'], '补充建议': [], '待核对': attribution_pending},
+                                      batch, table, {'已确认角色': confirmed}, shots)
+            except (ValueError, TypeError, KeyError) as exc:
+                errors.append(str(exc))
         elif role == '验收':
             if data['集'] != int(episode.name[1:]):
                 errors.append('验收返回集号不一致')

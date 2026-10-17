@@ -33,6 +33,8 @@ def board(tmp_path):
     save(episode / '声音记录.json', [{'id': 'E01-S001', '起': '00:00.1', '止': '00:00.9', '文本': '对白隔离哨兵', '声线': 'E01-V1', '听辨': '清楚'}])
     save(episode / '字幕记录.json', [{'起': '00:00.1', '止': '00:00.9', '文字': '台词字幕隔离哨兵', '类型': '台词字幕'},
                                   {'起': '00:00.1', '止': '00:00.9', '文字': '地点文字', '类型': '地点字幕'}])
+    save(episode / '临时人物.json', [{'id': 'E01-P01-T1', '片段': 'E01-P01', '外观': '紫衣双马尾小女孩',
+         '出现镜头': ['E01-K001'], '映射': None, '映射依据': ''}])
     save(episode / '动作记录.json', [{'动作': '动作隔离哨兵', '确定度': '确认'}])
     save(episode / '归属表.json', [{'依据': '归属隔离哨兵', '确定度': '确认'}])
     for name in ('对照表', '待核对', '问题清单'):
@@ -95,7 +97,9 @@ def test_draft_has_no_frames(board):
 def test_role_card_projects_no_actions(board, action_result):
     save(board / '派发结果/动作识别/E01-P01.json', action_result)
     p = assemble('角色卡', board, {})
-    assert '人物与口型' in p.prompt and '紫衣双马尾小女孩' in p.prompt
+    assert '候选人物' in p.prompt and '紫衣双马尾小女孩' in p.prompt
+    assert '对白隔离哨兵' not in p.prompt and '台词字幕隔离哨兵' not in p.prompt
+    assert p.view_all and len(p.images) == 1
     assert '动作隔离哨兵' not in p.prompt
     assert '无明显动作' not in p.prompt
 
@@ -387,7 +391,7 @@ def test_other_role_validation(board, action_result):
     role_packet = assemble('角色卡', board, {})
     roles = {'模式': '建立', '临时人物映射': [], '新增人物': [], '补充资料': [],
              '对白归属': [], '变更申请': [], '待核对': [], '性格总结': []}
-    assert any('覆盖全部对白句' in e for e in validate_result('角色卡', roles, board, role_packet))
+    assert any('两阶段建立入口' in e for e in validate_result('角色卡', roles, board, role_packet))
     draft_packet = assemble('成稿', board, {})
     draft = {'工作稿': (board / '工作稿.md').read_text(), '对照表': []}
     assert validate_result('成稿', draft, board, draft_packet)  # 缺少确认记录与对照表，不能视为合格成稿。

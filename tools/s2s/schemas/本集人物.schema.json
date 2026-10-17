@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "本集人物",
+  "type": "object",
+  "properties": {
+    "版本": {"const": 1},
+    "输入版本": {"type": ["object", "null"]},
+    "人物": {"type": "array", "items": {
+      "type": "object",
+      "properties": {
+        "id": {"type": "string", "pattern": "^E[0-9]{2,}-N[0-9]{3,}$"},
+        "名称": {"type": "string", "minLength": 1},
+        "名称类型": {"enum": ["姓名", "描述名"]},
+        "外观": {"type": "string", "minLength": 1},
+        "成员": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*$"}},
+        "参考帧": {"type": "string", "minLength": 1},
+        "依据": {"type": "string", "minLength": 1},
+        "确定度": {"enum": ["确认", "存疑"]},
+        "待核对": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "候选C": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^C[0-9]{3,}$"}]},
+        "审核C": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^C[0-9]{3,}$"}]},
+        "审核依据": {"type": ["string", "null"]},
+        "状态": {"enum": ["待审核", "已审核"]}
+      },
+      "required": ["id", "名称", "名称类型", "外观", "成员", "参考帧", "依据", "确定度", "待核对", "候选C", "审核C", "审核依据", "状态"],
+      "additionalProperties": false
+    }}
+  },
+  "required": ["版本", "输入版本", "人物"],
+  "additionalProperties": false
+}

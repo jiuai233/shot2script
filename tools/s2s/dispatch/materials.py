@@ -8,7 +8,7 @@ import re
 from s2s.config import PROJECT_ROOT
 from s2s.evidence import evidence_problem
 from s2s.segments import per_second
-from s2s.validate import time_seconds, validate_file
+from s2s.validate import time_seconds, validate_file, episode_people_errors
 
 PROMPTS = {'全剧主控': '01-全剧主控.md', '单集主控': '02-单集主控.md',
            '角色卡': '03-角色卡.md', '动作识别': '04-动作识别.md',
@@ -17,9 +17,8 @@ PROMPTS = {'全剧主控': '01-全剧主控.md', '单集主控': '02-单集主�
 MATERIALS = {
     '动作识别': ('镜头表:片段及衔接投影', '片段表:本段投影', '声音记录:仅起止',
                '角色卡:已确认外观', '字幕记录:非台词画面文字', '帧:白名单'),
-    '角色卡': ('角色卡', '声音记录', '字幕记录', '镜头表', '临时人物',
-              '口型记录:句级与轨迹证据投影', '声纹聚类', '声纹候选:存在时',
-              '片段结果:人物与口型投影', '帧:白名单'),
+    '角色卡': ('角色卡:已确认', '临时人物:候选/冻结投影', '本集人物',
+              '字幕记录:仅人物字卡/地点', '声音及口型声纹:仅归属核对', '帧:阶段授权'),
     '成稿': ('镜头表:不含帧路径', '动作记录:已确认', '归属表:已确认', '声音记录',
            '字幕记录', '角色卡', '待核对', '问题清单:定向改写', '工作稿:定向改写', '对照表:定向改写'),
     '验收': ('工作稿', '对照表', '角色卡', '镜头表', '声音记录', '字幕记录',
@@ -28,7 +27,7 @@ MATERIALS = {
 # 子角色只附本角色用到的数据约定章节；主控仍读全文。
 CONVENTION = {
     '动作识别': {'1', '4.1', '4.3', '4.4', '4.6', '4.9', '4.10', '4.11', '4.12'},
-    '角色卡': {'1', '4.1', '4.2', '4.3', '4.4', '4.6', '4.9', '4.12', '4.13', '4.15', '4.16'},
+    '角色卡': {'1', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.9', '4.12', '4.13', '4.15', '4.16'},
     '成稿': {'1', '4.1', '4.2', '4.3', '4.4', '4.5', '4.6', '4.7', '4.9'},
     '验收': {'1', '4.1', '4.2', '4.3', '4.6', '4.7', '4.8', '4.9', '4.10', '4.11'},
 }
@@ -124,6 +123,17 @@ class Package:
                        for p in [*self.files, *self.images]]}
 
 
+def local_people_projection(episode):
+    path = episode / '本集人物.json'
+    if not path.is_file():
+        return []  # 旧无N黑板兼容；N引用仍由validate硬核验。
+    table = load(path)
+    errors = episode_people_errors(episode, table)
+    if errors:
+        raise ValueError('本集人物登记无效：' + '; '.join(errors))
+    return [{k: row[k] for k in ('id', '名称', '名称类型', '状态', '审核C')} for row in table['人物']]
+
+
 def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *, prompt_file=None, review_stage=None) -> Package:
     if role not in MODES:
         raise ValueError('只能派发子角色：' + '、'.join(MODES))
@@ -133,6 +143,11 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
     if mode not in MODES[role]:
         raise ValueError(f'{role} 模式无效：{mode}')
     scope = scope if scope is not None else variables.get('范围', '')
+    if role == '角色卡' and mode == '建立':
+        from .rolecard import _materials, _package, _confirmed
+        materials = _materials(episode)
+        return _package(episode, '人物合并', {'候选人物': materials['临时人物'], '已确认角色': _confirmed(episode),
+                        '身份证据字幕': materials['身份证据字幕']}, materials['images'], materials['labels'], prompt_file=prompt_file)
     packet = Package('', mode=mode, scope=str(scope))
     data = {}
 
@@ -185,12 +200,25 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
                          if s['类型'] != '台词字幕' and time_seconds(s['起']) < time_seconds(selected_shots[-1]['止'])
                          and time_seconds(s['止']) > time_seconds(selected_shots[0]['起'])]
     else:
-        data.update({'角色卡': roles, '镜头表': shots,
-                     '声音记录': read('声音记录.json'), '字幕记录': read('字幕记录.json')})
+        if role == '角色卡' and mode == '总结':
+            data = {'角色卡': [r for r in roles if r['状态'] == '已确认'],
+                    '确认事件': [r for r in read('动作记录.json') if r['确定度'] == '确认']}
+            selected_shots = []
+        else:
+            data.update({'角色卡': roles, '镜头表': shots,
+                         '声音记录': read('声音记录.json'), '字幕记录': read('字幕记录.json')})
+        if role in ('角色卡', '成稿', '验收'):
+            data['本集人物'] = local_people_projection(episode)
+            if (episode / '本集人物.json').is_file():
+                packet.files.append(episode / '本集人物.json')
         if role == '角色卡':
+            data['角色卡'] = [r for r in roles if r['状态'] == '已确认']
+            if '字幕记录' in data:
+                data['字幕记录'] = [r for r in data['字幕记录'] if r['类型'] in ('人物字卡', '地点字幕')]
             data['临时人物'] = read('临时人物.json', optional=True)
+            data['冻结人物表约束'] = '绑定当前登记和映射；只核对归属或提出建议，禁止重分组、造N/C或改变映射。'
             data['证据状态'] = {}
-            for name in ('口型记录', '声纹聚类', '声纹候选'):
+            for name in (() if mode == '总结' else ('口型记录', '声纹聚类', '声纹候选')):
                 path = episode / (name + '.json')
                 if not path.is_file():
                     data['证据状态'][name] = {'状态': '缺失', '说明': '本次没有该项证据，不能据此作否定判断'}
@@ -216,7 +244,7 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
                 data[name] = value
             # 片段原始响应保留口型；合并动作记录本身没有口型字段。
             people = []
-            for path in sorted((episode / '派发结果' / '动作识别').glob('*.json')):
+            for path in ([] if mode == '总结' else sorted((episode / '派发结果' / '动作识别').glob('*.json'))):
                 result = load(path)
                 packet.files.append(path)
                 for shot in result.get('镜头', []):
@@ -341,5 +369,5 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
     if role == '动作识别':
         packet.system += '\n顶层仅允许：片段、模式、镜头、衔接、加密取帧请求、待核对。临时人物在镜头的画面人物中声明，不另设顶层临时人物字段。'
     if role == '角色卡':
-        packet.system += '\n新人物由主控审核后分配正式角色编号；分配前对白归属保留已有临时人物编号，不引用尚未登记的 C 编号。'
+        packet.system += '\n本次绑定当前冻结人物表；临时人物映射、新增人物必须为空。只引用已确认C或登记N，禁止重分组或分配编号。总结的对白归属也必须为空。'
     return packet

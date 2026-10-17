@@ -69,6 +69,20 @@ def test_unconfirmed_mixed_and_unknown_not_enrolled(tmp_path):
     assert result["角色"] == [] and len(result["跳过句"]) == 3
 
 
+def test_confirmed_c_enrolls_while_null_n_and_t_are_skipped(tmp_path):
+    extracted = episode(tmp_path, roles=('C001', None, 'E01-N001', 'E01-P01-T1'))
+    owners = read(tmp_path / 'E01/归属表.json')
+    owners[1]['确定度'] = '存疑'
+    save(tmp_path / 'E01/归属表.json', owners)
+    before = (tmp_path / 'E01/归属表.json').read_bytes()
+    result = enroll(tmp_path, 'E01', extracted=extracted)
+    assert result['角色'] == [{'角色': 'C001', '本集句数': 1}]
+    assert result['跳过句'] == ['E01-S002', 'E01-S003', 'E01-S004']
+    assert [p.name for p in (tmp_path / '声纹').glob('*.json')] == ['C001.json']
+    assert read(tmp_path / '声纹/C001.json')['句数'] == 1
+    assert (tmp_path / 'E01/归属表.json').read_bytes() == before
+
+
 def test_model_mismatch_and_bad_dimensions_rejected(tmp_path):
     first = episode(tmp_path)
     enroll(tmp_path,"E01",extracted=first)
