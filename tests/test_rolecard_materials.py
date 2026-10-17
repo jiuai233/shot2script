@@ -237,6 +237,149 @@ def test_missing_action_results_fail_without_preparing(snapshot):
         build_rolecard_materials(episode, max_images=64)
 
 
+def test_explicit_static_people_share_frame_without_actions(snapshot):
+    episode = snapshot()
+
+    def change(data):
+        row = data['镜头'][0]
+        row['动作'] = []
+        for person in row['画面人物']:
+            person['依据帧'] = ['K001_01.jpg']
+    update_result(episode, change)
+    before = {str(p.relative_to(episode)): p.read_bytes() for p in episode.rglob('*') if p.is_file()}
+    data = build_rolecard_materials(episode, max_images=64)
+    assert data == build_rolecard_materials(episode, max_images=64)
+    assert len(data['images']) == 1 and data['统计']['候选关联人数'] == 2
+    assert all(p['id'] in data['labels'][0] for p in data['临时人物'])
+    for index, person in enumerate(data['临时人物']):
+        basis = person['候选帧'][0]['选择依据']
+        assert basis == {'类型': '画面人物依据帧', '人物': person['id'],
+                         '来源': '派发结果/动作识别/E01-P01.json', '镜头序号': 0, '条目序号': index}
+        assert '未确认' in person['视觉适用性']
+    assert data['统计']['视觉覆盖'] == '未确认'
+    assert before == {str(p.relative_to(episode)): p.read_bytes() for p in episode.rglob('*') if p.is_file()}
+
+
+def test_explicit_pool_precedes_earlier_legacy_and_action_frames(snapshot):
+    episode = snapshot(1)
+    path = episode / '镜头表.json'
+    shots = json.loads(path.read_text(encoding='utf-8'))
+    shots['镜头'][0]['帧'].append({'文件': 'K001_02.jpg', '时间': '00:00.8'})
+    save(path, shots)
+    (episode / '素材/frames/K001_02.jpg').write_bytes(b'fake-frame')
+    source = episode / '派发结果/动作识别/E01-P01.json'
+    newer = json.loads(source.read_text(encoding='utf-8'))
+    newer['镜头'][0]['画面人物'][0]['依据帧'] = ['K001_02.jpg']
+    save(source.with_name('E01-P01-recheck.json'), newer)
+    data = build_rolecard_materials(episode, max_images=64)
+    selected = data['临时人物'][0]['候选帧'][0]
+    assert selected['文件'] == 'K001_02.jpg'
+    assert selected['选择依据']['类型'] == '画面人物依据帧'
+    assert selected['选择依据']['来源'].endswith('E01-P01-recheck.json')
+
+
+@pytest.mark.parametrize('invalid', [[], None, {}, 'K001_01.jpg', [None], ['bad.jpg'], ['K002_01.jpg']])
+def test_bad_explicit_evidence_never_falls_back(snapshot, invalid):
+    episode = snapshot(2, shared=False)
+    update_result(episode, lambda d: d['镜头'][0]['画面人物'][0].update(依据帧=invalid))
+    message = '非本镜头授权帧' if invalid == ['K002_01.jpg'] else '画面人物依据帧须为非空合法帧文件名数组'
+    with pytest.raises(ValueError, match=message):
+        build_rolecard_materials(episode, max_images=64)
+
+
+def test_explicit_evidence_checks_person_context(snapshot):
+    episode = snapshot(1)
+
+    def change(data):
+        data['镜头'][0]['画面人物'][0]['依据帧'] = ['K001_01.jpg']
+        data['镜头'][0]['动作'] = []
+        data['片段'] = 'E01-P02'
+    update_result(episode, change)
+    with pytest.raises(ValueError, match='人物依据与片段/本镜头声明不符'):
+        build_rolecard_materials(episode, max_images=64)
+
+
+def add_dense(episode, *, folder='a', moment='00:00.2', video='video.mp4'):
+    table = episode / '镜头表.json'
+    shots = json.loads(table.read_text(encoding='utf-8'))
+    shots['视频'] = 'video.mp4'
+    save(table, shots)
+    filename = 't' + moment.replace(':', '-') + '.jpg'
+    index = episode / '素材/frames_dense' / folder / '帧.json'
+    save(index, {'视频': video, '起': '00:00.0', '止': '00:02.0', '帧率': 5,
+                 '帧': [{'文件': filename, '时间': moment}]})
+    (index.parent / filename).write_bytes(b'fake-dense-frame')
+    return index, filename
+
+
+@pytest.mark.parametrize('explicit', [True, False])
+def test_dense_evidence_uses_valid_index_and_tracks_source(snapshot, tmp_path, explicit):
+    episode = snapshot(1)
+    index, filename = add_dense(episode)
+
+    def change(data):
+        row = data['镜头'][0]
+        if explicit:
+            row['画面人物'][0]['依据帧'] = [filename]
+            row['动作'] = []
+        else:
+            row['动作'][0]['依据帧'] = [filename]
+    update_result(episode, change)
+    # 无关索引的坏结构、错误视频、越界链接均不应扩大本次所需索引的校验范围。
+    unrelated = episode / '素材/frames_dense/unrelated/帧.json'
+    save(unrelated, {'视频': 'other.mp4', '帧': [{'文件': 't00-00.9.jpg'}]})
+    broken = episode / '素材/frames_dense/broken/帧.json'
+    broken.parent.mkdir(parents=True)
+    broken.write_text('not json', encoding='utf-8')
+    outside = tmp_path / 'outside-index.json'
+    save(outside, {'视频': 'other.mp4', '帧': [{'文件': filename}]})
+    escaped = episode / '素材/frames_dense/escaped/帧.json'
+    escaped.parent.mkdir(parents=True)
+    escaped.symlink_to(outside)
+    data = build_rolecard_materials(episode, max_images=64)
+    assert data['images'] == [str((index.parent / filename).resolve())]
+    assert str(index.relative_to(episode)) in data['来源文件']
+    assert str(unrelated.relative_to(episode)) not in data['来源文件']
+    assert data['临时人物'][0]['候选帧'][0]['时间'] == '00:00.2'
+    assert data['统计']['视觉覆盖'] == '未确认'
+    assert '不代表重证历史实际送图' in data['选择机制']
+
+
+@pytest.mark.parametrize('case,message', [
+    ('video', '视频不一致'), ('time', '帧时间越出本镜头'),
+    ('missing', '图片不存在'), ('frame_escape', '路径越界'),
+    ('index_escape', '缺少有效加密帧索引'), ('ambiguous', '同名多路径歧义'),
+    ('invalid_index', '索引不合格'), ('no_index', '缺少有效加密帧索引'),
+])
+def test_dense_evidence_rejects_invalid_authority(snapshot, tmp_path, case, message):
+    episode = snapshot(1)
+    index, filename = add_dense(episode, moment='00:01.0' if case == 'time' else '00:00.2',
+                                video='other.mp4' if case == 'video' else 'video.mp4')
+    update_result(episode, lambda d: d['镜头'][0]['画面人物'][0].update(依据帧=[filename]))
+    frame = index.parent / filename
+    if case == 'missing':
+        frame.unlink()
+    elif case == 'frame_escape':
+        outside = tmp_path / 'outside.jpg'
+        outside.write_bytes(b'fake-frame')
+        frame.unlink()
+        frame.symlink_to(outside)
+    elif case == 'index_escape':
+        outside = tmp_path / 'outside.json'
+        index.rename(outside)
+        index.symlink_to(outside)
+    elif case == 'ambiguous':
+        add_dense(episode, folder='b')
+    elif case == 'invalid_index':
+        dense = json.loads(index.read_text(encoding='utf-8'))
+        dense['止'] = '00:00.1'
+        save(index, dense)
+    elif case == 'no_index':
+        index.unlink()
+    with pytest.raises(ValueError, match=message):
+        build_rolecard_materials(episode, max_images=64)
+
+
 def test_cli_writes_new_output_only_and_never_inside_snapshot(snapshot, tmp_path):
     episode = snapshot()
     before = {str(p.relative_to(episode)): p.read_bytes() for p in episode.rglob('*') if p.is_file()}

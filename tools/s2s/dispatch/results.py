@@ -128,9 +128,13 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
                     continue
                 if (shot['起'], shot['止']) != (source['起'], source['止']):
                     errors.append(shot['镜头'] + ' 起止与镜头表不一致')
-                frames = {f['文件'] for f in sent.get(shot['镜头'], source)['帧']}
-                frames.update(f['文件'] for f in package.dense if f['镜头'] == shot['镜头'])
-                for entry in [*shot['动作'], *shot['神态']]:
+                authorized = sent.get(shot['镜头'])
+                if authorized is None:
+                    errors.append(shot['镜头'] + ' 缺少本次授权镜头')
+                frames = {f['文件'] for f in authorized['帧']} if authorized else set()
+                if authorized is not None:
+                    frames.update(f['文件'] for f in package.dense if f['镜头'] == shot['镜头'])
+                for entry in [*shot['画面人物'], *shot['动作'], *shot['神态']]:
                     if not set(entry['依据帧']).issubset(frames):
                         errors.append(shot['镜头'] + ' 引用了非本镜头依据帧')
                 local_people = {p['人物'] for p in shot['画面人物']}

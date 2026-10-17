@@ -1,3 +1,4 @@
+import copy
 import json
 
 import pytest
@@ -146,9 +147,14 @@ def test_action_sends_one_frame_per_second(board, action_result):
     action_result['镜头'][0].update({'起': '00:00.0', '止': '00:03.0', '动作': [
         {'起': '00:00.5', '止': '00:01.6', '执行者': 'E01-P01-T1', '动作': '向前走', '对象': None, '物件': None,
          '结果': None, '关键': False, '关键类别': None, '依据帧': ['K001_02.jpg', 'K001_04.jpg'], '确定度': '确认', '说明': ''}]})
+    person = action_result['镜头'][0]['画面人物'][0]
+    person['依据帧'] = ['K001_02.jpg']
     assert not validate_result('动作识别', action_result, board, p)
+    person['依据帧'] = ['K001_01.jpg']
+    assert validate_result('动作识别', action_result, board, p) == ['E01-K001 引用了非本镜头依据帧']
+    person['依据帧'] = ['K001_02.jpg']
     action_result['镜头'][0]['动作'][0]['依据帧'] = ['K001_01.jpg']
-    assert 'E01-K001 引用了非本镜头依据帧' in validate_result('动作识别', action_result, board, p)
+    assert validate_result('动作识别', action_result, board, p) == ['E01-K001 引用了非本镜头依据帧']
 
 
 def test_action_rejects_mostly_idle_shots(board, action_result):
@@ -161,9 +167,14 @@ def test_action_rejects_mostly_idle_shots(board, action_result):
         (board / '素材/frames' / shot['帧'][0]['文件']).write_bytes(b'fake-frame')
     p = assemble('动作识别', board, {'片段号': 'E01-P01'})
     template = action_result['镜头'][0]
-    action_result['镜头'] = [{**template, '镜头': s['id'], '起': s['起'], '止': s['止'], '动作': []} for s in shots]
+    action_result['镜头'] = []
+    for shot in shots:
+        row = copy.deepcopy(template)
+        row.update({'镜头': shot['id'], '起': shot['起'], '止': shot['止'], '动作': []})
+        row['画面人物'][0]['依据帧'] = [shot['帧'][0]['文件']]
+        action_result['镜头'].append(row)
     errors = validate_result('动作识别', action_result, board, p)
-    assert any('8 个镜头中 8 个没有动作条目' in e for e in errors)
+    assert len(errors) == 1 and '8 个镜头中 8 个没有动作条目' in errors[0]
     for row, shot in zip(action_result['镜头'][:3], shots):
         row['动作'] = [{'起': shot['起'], '止': shot['止'], '执行者': 'E01-P01-T1', '动作': '向前走', '对象': None,
                        '物件': None, '结果': None, '关键': False, '关键类别': None,
