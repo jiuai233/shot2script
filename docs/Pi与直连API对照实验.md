@@ -53,7 +53,7 @@ uv run python tools/benchmark_dp.py \
   --variants pi-read,pi-attach,direct \
   --repeat 3 \
   --thinking high \
-  --schema tools/s2s/dispatch/role_schemas.json \
+  --schema tmp/bench-input/动作识别.schema.json \
   --output tmp/benchmark-dp/action-P01 \
   --live
 ~~~
