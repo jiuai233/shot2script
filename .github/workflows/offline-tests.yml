@@ -1,0 +1,23 @@
+name: Offline production checks
+on:
+  push:
+    branches: [feat/deepseek-production-pipeline]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Export tracked source for offline testing
+        run: git archive --format=tar -o source.tar HEAD
+      - uses: actions/upload-artifact@v4
+        with:
+          name: offline-source
+          path: source.tar
+          retention-days: 1
