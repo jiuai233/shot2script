@@ -310,7 +310,7 @@ def test_other_role_validation(board, action_result):
     assert any('覆盖全部对白句' in e for e in validate_result('角色卡', roles, board, role_packet))
     draft_packet = assemble('成稿', board, {})
     draft = {'工作稿': (board / '工作稿.md').read_text(), '对照表': []}
-    assert validate_result('成稿', draft, board, draft_packet) == []
+    assert validate_result('成稿', draft, board, draft_packet)  # 缺少确认记录与对照表，不能视为合格成稿。
     review_packet = assemble('验收', board, {})
     review = {'模式': '全文审查', '集': 1, '审查范围': {'行': '1-4', '场景': ['场景1-1'], '镜头': 'E01-K001', '对白句': 'E01-S001'},
               '问题': [], '复核': [], '统计': {'阻断': 0, '规范': 0}, '结论': '通过'}

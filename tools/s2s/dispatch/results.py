@@ -7,6 +7,8 @@ import tempfile
 
 from jsonschema import Draft202012Validator
 from s2s.validate import validate_file, time_seconds
+from s2s.names import name_errors
+from s2s.quality import check_script
 from .materials import dumps, load
 
 
@@ -82,10 +84,13 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
         context = Path(folder) / episode.name
         context.mkdir()
         for name in ('镜头表.json', '片段表.json', '声音记录.json', '字幕记录.json',
-                     '动作记录.json', '待核对.json', '问题清单.json', '工作稿.md', '临时人物.json'):
+                     '动作记录.json', '归属表.json', '待核对.json', '问题清单.json', '工作稿.md', '临时人物.json'):
             source = episode / name
             if source.is_file():
                 (context / name).symlink_to(source.resolve())
+        if (episode / '素材/frames_dense').is_dir():
+            (context / '素材').mkdir()
+            (context / '素材/frames_dense').symlink_to((episode / '素材/frames_dense').resolve())
         roles = episode.parent / '角色卡.json'
         (context / '角色卡.json').write_text(roles.read_text(encoding='utf-8') if roles.is_file() else '[]', encoding='utf-8')
 
@@ -154,12 +159,31 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
             if script.is_symlink():
                 script.unlink()
             script.write_text(data['工作稿'], encoding='utf-8')
-            if data['工作稿'].splitlines()[0].strip() != f'第{int(episode.name[1:])}集':
+            if not data['工作稿'].splitlines() or data['工作稿'].splitlines()[0].strip() != f'第{int(episode.name[1:])}集':
                 errors.append('工作稿首行集标题不正确')
             check('对照表', data['对照表'])
             if any(row['行'] > len(data['工作稿'].splitlines()) for row in data['对照表']):
                 errors.append('对照表行号超出工作稿')
+            quality = check_script(context)
+            errors.extend(f'{e["检查项"]}{e["位置"]}: {e["问题"]}' for e in quality['错误'])
         elif role == '角色卡':
+            for _, message in name_errors(data['新增人物']):
+                errors.append('新增人物名称：' + message)
+            known = {row['id'] for row in load(context / '角色卡.json')}
+            temporary_path = episode / '临时人物.json'
+            if temporary_path.is_file():
+                known.update(row['id'] for row in load(temporary_path))
+            seen = set()
+            for mapping in data['临时人物映射']:
+                if mapping['临时'] in seen:
+                    errors.append('临时人物重复映射：' + mapping['临时'])
+                seen.add(mapping['临时'])
+                if not mapping['依据'].strip():
+                    errors.append('临时人物映射缺少依据')
+                for field in ('临时', '映射'):
+                    if mapping[field] not in known:
+                        errors.append('人物映射引用未登记编号：' + mapping[field])
+
             check('归属表', data['对白归属'])
             if package.mode == '建立':
                 expected = [s['id'] for s in load(episode / '声音记录.json')]

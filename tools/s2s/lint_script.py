@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from s2s.validate import read_json
+from s2s.names import invalid_name, name_errors
 
 DEFAULT_WORDS = Path(__file__).with_name('schemas') / 'lint_words.json'
 TITLE_RE = re.compile(r'^(?:#{1,6}\s*)?第([1-9][0-9]*)集$')
@@ -14,6 +15,15 @@ DIALOGUE_RE = re.compile(r'^([^：:（）()]+?)(?:（([^（）]*)）|\(([^()]*)\
 PRONOUN_RE = re.compile(r'他们|她们|(?<![其吉])他|她')
 VAGUE_RE = re.compile(r'另一个人|其中一人|另一人|对方|前者|后者')
 OFFSCREEN_RE = re.compile(r'^(画外|心声|电话|视频|广播)')
+FORBIDDEN_STYLE = {
+    '文学化表达': ('眼中闪过一丝', '嘴角勾起一抹', '空气仿佛凝固', '意味深长', '下意识地',
+                '若有所思', '缓缓地', '不禁', '无声地', '显然', '看得出来'),
+    '镜头语言': ('特写', '近景', '远景', '俯拍', '镜头推近', '镜头拉远', '镜头跟随', '镜头扫过',
+               '慢镜头', '画面切到', '画面切向', '镜头一转', '画面一黑', '白光一闪',
+               '画面定格', '淡入', '淡出', '画面中', '画面里', '镜头前'),
+}
+PENDING_SPEAKER_RE = re.compile(r'^【说话人待核对 E[0-9]{2,}-Q[0-9]{3,}】$')
+PENDING_NOTE_RE = re.compile(r'【待核对 (E[0-9]{2,}-Q[0-9]{3,})】')
 FINAL_PATTERNS = (re.compile(r'【(?:说话人)?待核对[^】]*'), re.compile(r'[0-9]{2}:[0-9]{2}'),
                   re.compile(r'E[0-9]{2,}-[SKAQP][0-9]*'))
 
@@ -61,10 +71,13 @@ def lint_text(text: str, roles: list[dict] | None = None, *, formal: bool = Fals
     lines = text.splitlines()
     known = {role['名称'] for role in roles} if roles is not None else None
     # 未提供角色卡时，仅用人物行中的具体名称保护描述名。
-    protected = known if known is not None else {
+    protected = {name for name in known if not invalid_name(name)} if known is not None else {
         name for line in lines if line.strip().startswith('人物：') for name in _names(line.strip())
-        if name not in words['泛称']}
-    errors = []
+        if not invalid_name(name) and name not in words['泛称']}
+    aliases = {alias for role in roles or [] for alias in role.get('别名称呼', [])
+               if alias and alias not in (known or set()) and not invalid_name(alias)}
+    errors = [{'行': 0, '原文': roles[index]['名称'], '检查项': '角色卡名称', '命中词': message}
+              for index, message in name_errors(roles or [])]
 
     def fail(i, rule, token):
         errors.append({'行': i + 1, '原文': lines[i], '检查项': rule, '命中词': token})
@@ -96,9 +109,11 @@ def lint_text(text: str, roles: list[dict] | None = None, *, formal: bool = Fals
                 expected_scene = serial + 1
             if i + 1 >= len(lines) or not lines[i + 1].strip().startswith('人物：'):
                 fail(i, '场景后人物行', line)
-        elif kind == '人物行' and known is not None:
+        elif kind == '人物行':
             for name in _names(line):
-                if name not in known:
+                if invalid_name(name):
+                    fail(i, '非法人物名称', name)
+                elif known is not None and name not in known:
                     fail(i, '角色卡名称', name)
         elif kind == '未知':
             fail(i, '行类型', line)
@@ -110,7 +125,9 @@ def lint_text(text: str, roles: list[dict] | None = None, *, formal: bool = Fals
                 description = None
         elif kind == '对白':
             speaker, parenthesis, _ = parse_dialogue(line)
-            if known is not None and speaker not in known:
+            if invalid_name(speaker):
+                fail(i, '非法人物名称', speaker)
+            elif known is not None and speaker not in known and not PENDING_SPEAKER_RE.fullmatch(speaker):
                 fail(i, '角色卡名称', speaker)
             description = parenthesis
             if OFFSCREEN_RE.match(parenthesis):
@@ -119,7 +136,15 @@ def lint_text(text: str, roles: list[dict] | None = None, *, formal: bool = Fals
                     if word in masked:
                         fail(i, '画外形态动作', word)
         if description:
+            description = PENDING_NOTE_RE.sub('', description)
             masked = _mask_names(description, protected)
+            for alias in sorted(aliases, key=len, reverse=True):
+                if alias in masked:
+                    fail(i, '角色别称漂移', alias)
+            for rule, expressions in FORBIDDEN_STYLE.items():
+                for expression in expressions:
+                    if expression in masked:
+                        fail(i, rule, expression)
             for match in PRONOUN_RE.finditer(masked):
                 fail(i, '人物代词', match[0])
             # “它们”还可指物，只有明确的人物先行词时才报出。

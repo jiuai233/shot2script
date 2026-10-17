@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import unicodedata
 
-from s2s.lint_script import parse_dialogue
+from s2s.lint_script import line_type, parse_dialogue, PENDING_NOTE_RE
 from s2s.validate import read_json, time_seconds
 
 
@@ -98,9 +98,14 @@ def check_coverage(directory: str | Path, script: str | Path = '工作稿.md') -
             if previous is not None and rank[ident] < rank[previous]:
                 fail('句序错乱', {'行': entry['行'], '句': ident}, f'{ident} 排在时间更晚的 {previous} 后面')
             previous = ident
-    covered_actions = {ident for entry in mapping for ident in entry['动作']}
+    action_counts = Counter(ident for entry in mapping for ident in entry['动作'])
+    for ident, count in action_counts.items():
+        if count > 1:
+            fail('重复动作', {'动作': ident, '行': [r['行'] for r in mapping if ident in r['动作']]},
+                 f'同一动作引用 {count} 次')
+    covered_actions = set(action_counts)
     for entry in actions:
-        if entry['关键'] and entry['id'] not in covered_actions:
+        if entry['关键'] and entry.get('确定度') != '存疑' and entry['id'] not in covered_actions:
             fail('关键动作未覆盖', {'文件': '动作记录.json', '动作': entry['id']}, '关键动作未在对照表中出现')
 
     mapped_lines = Counter(entry['行'] for entry in mapping)
@@ -114,6 +119,11 @@ def check_coverage(directory: str | Path, script: str | Path = '工作稿.md') -
         if number > len(lines):
             fail('行号越界', {'行': number}, f'正文只有 {len(lines)} 行')
             continue
+        actual_type = line_type(lines[number - 1])
+        if entry['类型'] != actual_type:
+            fail('正文行类型', {'行': number}, f'对照表为 {entry["类型"]}，正文为 {actual_type}')
+        if entry['动作'] and entry['类型'] not in ('△', '对白'):
+            fail('非正文动作映射', {'行': number}, '动作只能映射到 △ 或对白括号')
         if entry['类型'] != '对白':
             if entry['句']:
                 fail('非对白句映射', {'行': number}, '句号只能映射到对白行')
@@ -125,12 +135,24 @@ def check_coverage(directory: str | Path, script: str | Path = '工作稿.md') -
         if any(ident not in sound_by_id for ident in entry['句']):
             continue
         expected = ''.join(sound_by_id[ident]['文本'] for ident in entry['句'])
-        actual = dialogue_lines[number][2]
+        actual = PENDING_NOTE_RE.sub('', dialogue_lines[number][2])
         if normalize_text(actual) != normalize_text(expected):
             fail('台词不一致', {'行': number, '句': entry['句']},
                  f'正文：{actual}；声音记录：{expected}')
     for number in dialogue_lines.keys() - mapped_dialogues:
         fail('对白未映射', {'行': number}, '正文对白行未在对照表中出现')
+    scene = None
+    scenes_by_line = {}
+    for number, line in enumerate(lines, 1):
+        kind = line_type(line)
+        if kind == '场景行':
+            scene = line.split('：', 1)[0].strip()
+        scenes_by_line[number] = scene
+        if kind in ('场景行', '人物行', '△', '对白') and number not in mapped_lines:
+            fail('正文未映射', {'行': number}, '正文行缺少对照记录，不能跳过独立画面核对')
+    for entry in mapping:
+        if entry['行'] in scenes_by_line and entry.get('场景') != scenes_by_line[entry['行']]:
+            fail('行场景不一致', {'行': entry['行']}, '对照表场景与该行实际场景不一致')
     result['通过'] = not errors
     return result
 

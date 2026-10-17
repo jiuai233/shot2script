@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from jsonschema import Draft202012Validator
+from s2s.names import name_errors
 
 SCHEMA_DIR = Path(__file__).with_name('schemas')
 TYPE_ALIASES = {'roles': '角色卡', 'shots': '镜头表', 'segments': '片段表',
@@ -380,6 +381,40 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
             fail(('句',), problem)
         _check_lipsync(data, source, file, reference, fail)
     if schema_valid:
+        if kind == '角色卡':
+            for i, message in name_errors(data):
+                fail((i, '名称'), message)
+        elif kind == '动作记录':
+            shots, problem = load_companion('镜头表')
+            if problem:
+                fail((), problem)
+            elif not Draft202012Validator(read_json(SCHEMA_DIR / '镜头表.schema.json')).is_valid(shots):
+                fail((), '引用镜头表结构不符合数据约定')
+            else:
+                by_id = {s['id']: s for s in shots['镜头']}
+                dense_frames = {}
+                for index in (board_dir / '素材/frames_dense').rglob('帧.json'):
+                    try:
+                        dense = read_json(index)
+                        if not validate_file(index, '加密帧索引')['通过'] or dense['视频'] != shots['视频']:
+                            continue
+                        for frame in dense['帧']:
+                            dense_frames.setdefault(frame['文件'], []).append(time_seconds(frame['时间']))
+                    except (OSError, ValueError):
+                        continue
+                for i, action in enumerate(data):
+                    if not action['动作'].strip():
+                        fail((i, '动作'), '动作内容不能为空')
+                    shot = by_id.get(action['镜头'])
+                    if shot is None:
+                        continue
+                    start, end = time_seconds(shot['起']), time_seconds(shot['止'])
+                    if not start <= time_seconds(action['起']) <= time_seconds(action['止']) <= end:
+                        fail((i,), '动作时间越出镜头范围')
+                    frames = {f['文件'] for f in shot['帧']}
+                    for j, frame in enumerate(action['依据帧']):
+                        if frame not in frames and not any(start <= t < end for t in dense_frames.get(frame, [])):
+                            fail((i, '依据帧', j), '依据帧不在本镜头或有效加密帧索引中：' + frame)
         if kind == '镜头表':
             _check_shots(data, fail)
         elif kind == '片段表':

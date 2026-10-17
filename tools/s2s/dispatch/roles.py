@@ -9,6 +9,7 @@ import time
 
 from s2s import agent, config
 from s2s.runners import _safe
+from s2s.quality import review_version
 from .materials import assemble, dumps, load
 from .results import extract_result, validate_result
 from .transport import decode_response, pi_options
@@ -79,6 +80,7 @@ def merge_review_issues(parts):
 
 def review_full(episode, variables, output, *, timeout, call, validator, prompt_file):
     """文本整集检查一次，画面逐段检查；覆盖回执独立保存。"""
+    version = review_version(episode)
     folder = output.parent / (output.stem + '-分段')
     folder.mkdir(parents=True, exist_ok=True)
     parts, coverage = [], []
@@ -100,12 +102,15 @@ def review_full(episode, variables, output, *, timeout, call, validator, prompt_
             coverage.append({'片段': segment['id'], '状态': '完成' if receipt['画面完整'] else '画面未完整审查',
                              '授权帧数': receipt['授权帧数'], '已读帧数': receipt['已读帧数'],
                              '已读帧': receipt['已读帧'], '结果文件': str(path)})
-    return finish_review(episode, output, parts, coverage)
+    return finish_review(episode, output, parts, coverage, version=version,
+                         simulated=call is not None or validator is not None)
 
 
-def finish_review(episode, output, parts, coverage):
+def finish_review(episode, output, parts, coverage, *, version, simulated=False):
     issues = merge_review_issues(parts)
-    complete = all(c['状态'] == '完成' for c in coverage)
+    expected = [row['id'] for row in load(episode / '片段表.json')['片段']]
+    complete = bool(expected) and [c['片段'] for c in coverage] == expected and all(c['状态'] == '完成' for c in coverage)
+    unchanged = version == review_version(episode)
     shots = load(episode / '镜头表.json')['镜头']
     lines = (episode / '工作稿.md').read_text(encoding='utf-8').splitlines()
     result = {'模式': '全文审查', '集': int(episode.name[1:]),
@@ -114,10 +119,11 @@ def finish_review(episode, output, parts, coverage):
                            '对白句': parts[0]['审查范围']['对白句']},
               '问题': issues, '复核': [],
               '统计': {level: sum(i['级别'] == level for i in issues) for level in ('阻断', '规范')},
-              '结论': '通过' if complete and all(p['结论'] == '通过' for p in parts) and not issues else '不通过'}
+              '结论': '通过' if complete and unchanged and all(p['结论'] == '通过' for p in parts) and not issues else '不通过'}
     output.write_text(dumps(result) + '\n', encoding='utf-8')
     unique_read = {p for c in coverage for p in c['已读帧']}
-    coverage_result = {'全文审查完成': complete, '片段': coverage, '实际读取不同帧数': len(unique_read)}
+    coverage_result = {'全文审查完成': complete, '片段': coverage, '实际读取不同帧数': len(unique_read),
+                       '输入版本': version, '输入未变': unchanged, '模拟调用': simulated, '验收结果': result}
     output.with_suffix('.coverage.json').write_text(dumps(coverage_result) + '\n', encoding='utf-8')
     return {'通过': True, '结果文件': str(output), '全文审查完成': complete, '画面完整': complete}
 

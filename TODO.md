@@ -6,6 +6,12 @@
 
 阶段 1 已合入 main 的 `a2201ff` 并统一提示词与文档；阶段 2 已限制全部生成式入口为 DeepSeek；阶段 3 已接通 Qwen 单路、异常回听、声纹及口型资料。三个阶段分别提交，不推送。人物/动作进一步规则、完整编排与上传界面、真实素材质量验收留在阶段 4—6。
 
+## 本轮动作与正式稿检查
+
+- [x] 动作与对白关联：增加确认排布、关联句和审核表述；检查人物/时间冲突、重复动作事件、错误位置与内容缺失。旧动作数据可用于草稿，正式稿须补齐排布。
+- [ ] 正式交付入口：复核当前稿件、未决问题、独立验收版本和画面覆盖后，接入单集及 Word 导出。
+- 核心校验验证：`.venv/bin/python -m pytest -q tests/test_action_placement.py tests/test_production_script.py tests/test_t5_lint_script.py tests/test_t5_coverage.py tests/test_t5_validate.py tests/test_t5b_validate.py tests/test_t8_dispatch.py tests/test_t9e_dispatch.py`，350 通过，未调用真实模型。
+
 ## 前期已保存的检查点
 
 - [x] 找回上轮本地 PRD 与成稿/验收提示词补丁。可恢复包中没有未提交生产代码副本，不把讨论方案当作已实现代码。
@@ -26,7 +32,7 @@
 - [ ] **PROD-06 角色证据**：main 的口型/声纹装配已同步；缺失/过期隔离、声线配对重算、跨集候选摘要及混人/冲突待核对已完成离线测试，不按旧角色数强并新人。换装身份及动作事件的进一步规则在阶段 4；真实身份效果未验收。
 - [ ] **PROD-07 成稿门禁**：统一角色 ID/名称；人物代词、非法泛称、别称漂移、文学化、动作/对白错配及证据引用错误拦截；短动作入括号、关键动作不能被删掉过关。提示词提交不等于这些程序校验已实现。
 - [ ] **PROD-08 离线测试**：先跑现有非 live 基线，再增加配置拒绝、单路切句、证据装配、动作排布、断点续做、草稿/正式稿门禁等测试；使用 mock/夹具，不调用真实模型。
-- [ ] **PROD-09 输入到交付**：封装视频输入、任务状态、局部重跑、预览与 Markdown/Word 导出；上传界面与运行入口分别验收，不以命令行片段代替完整上传产品。
+- [ ] **PROD-09 输入到交付**：命令行生产入口已串联视频输入、固定素材处理、单集/全剧主控、任务记录、阶段断点和 Markdown/Word 交付；正式稿复用统一成稿检查与当前独立审查回执，全剧再次解析 Word。上传页面、在线任务状态、统一人工核对、局部错误重跑及导出界面尚未实现，完整产品仍未验收。
 - [ ] **PROD-10 真实验收**：用有人工真值的视频评测人物、动作、对白与时序；此项涉及真实模型，未执行，不能用 mock 通过替代内容质量结论。
 
 每完成一个可检查的小步骤就提交 commit，并更新本清单。PRD/提示词已提交、运行时代码已实现、离线测试通过、真实素材验收通过是四个不同状态，分别记录。
@@ -50,7 +56,8 @@
 - 阶段 2 验证：`.venv/bin/python -m pytest -q tests/test_production_models.py tests/test_t1_config.py tests/test_t1_interfaces.py tests/test_t1_runners.py tests/test_t8_dispatch.py tests/test_t9e_dispatch.py -m 'not live'`，105 通过。
 - 阶段 3：Qwen 单路、异常回听、严格裁定迁移、声纹候选与有效口型衔接已实现。离线整体验证：`.venv/bin/python -m pytest -m 'not live' -q`，1249 通过、2 跳过、2 未选（live）。随后补充两项声音身份存疑测试；最终定向验证 `.venv/bin/python -m pytest -q tests/test_production_models.py tests/test_production_audio.py -m 'not live'`，68 通过。
 - 未调用真实模型，未进行真实视频质量验收。MediaPipe 本机检测的两项测试因主环境缺依赖跳过；相关数据装配与模拟测试已覆盖。
-- 阶段 4—6、上传界面和真实素材验收均未执行；完成阶段 3 后等待验收。
+- 阶段 5：`run_episode.py --视频` 和 `run_series.py --素材目录` 已接入固定素材处理与交付检查；定向离线验证 `.venv/bin/python -m pytest -q tests/test_production_pipeline.py tests/test_production_pipeline_edges.py tests/test_t8_dispatch.py tests/test_production_audio.py tests/test_t6_docx.py -m 'not live'`，133 通过。覆盖输入定位、缺集/多视频拒绝、断点恢复、人工改字后刷新、主控退出非成功、正式稿检查、跨集阻断与真实 Word 生成解析；识别与主控使用夹具，不代表真实视频验收。
+- 上传界面、阶段 6 和真实素材验收尚未完成；阶段 4 的实现与验收状态见成稿检查相关条目。
 
 ## 原任务与素材状态（历史记录，需按新生产路线复核）
 
