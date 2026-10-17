@@ -74,8 +74,12 @@ def direct_call(prompt: str, images: list[Path], *, url: str, api_key: str,
                 transport: httpx.BaseTransport | None = None) -> Trial:
     if not api_key:
         raise ValueError("直连需设置 OPENCODE_API_KEY；不会读取 Pi 登录凭据")
-    if not url.startswith("https://") and not url.startswith("http://127.0.0.1:"):
-        raise ValueError("端点必须为 HTTPS 或 127.0.0.1 测试地址")
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    same_provider = parsed.scheme == "https" and parsed.hostname == "opencode.ai" and parsed.path.endswith("/chat/completions")
+    local_mock = parsed.scheme == "http" and parsed.hostname == "127.0.0.1" and parsed.port is not None
+    if not (same_provider or local_mock):
+        raise ValueError("端点必须为 opencode.ai 的 HTTPS Chat Completions，或 127.0.0.1 本地测试地址")
     payload = make_payload(prompt, images, reasoning=reasoning, max_tokens=max_tokens)
     started = time.perf_counter()
     with httpx.Client(timeout=timeout, transport=transport) as client:
