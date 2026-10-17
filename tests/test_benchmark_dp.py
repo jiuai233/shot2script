@@ -59,6 +59,8 @@ def test_direct_rejects_plain_http_and_missing_key():
         b.direct_call("x", [], url=b.DEFAULT_URL, api_key="", reasoning="high", max_tokens=100, timeout=1)
     with pytest.raises(ValueError, match="HTTPS"):
         b.direct_call("x", [], url="http://example.com", api_key="secret", reasoning="high", max_tokens=100, timeout=1)
+    with pytest.raises(ValueError, match="opencode.ai"):
+        b.direct_call("x", [], url="https://malicious.example/chat/completions", api_key="secret", reasoning="high", max_tokens=100, timeout=1)
 
 
 def test_json_schema_is_not_video_truth():
