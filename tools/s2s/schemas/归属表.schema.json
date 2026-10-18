@@ -27,9 +27,11 @@
           "画内",
           "画外",
           "心声",
-          "设备"
+          "设备",
+          null
         ]
       },
+      "形态待核对": {"type": "string", "pattern": "\\S"},
       "依据": {
         "type": "string"
       },
@@ -47,6 +49,7 @@
       "依据",
       "确定度"
     ],
-    "additionalProperties": false
+    "additionalProperties": false,
+    "allOf": [{"if": {"properties": {"形态": {"type": "null"}}}, "then": {"required": ["形态待核对"]}}]
   }
 }

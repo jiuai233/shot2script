@@ -1,6 +1,7 @@
 """统一的 pi / opencode / DeepSeek 直连非交互调用接口。"""
 
 import base64
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -45,6 +46,7 @@ def run(
     runner: str = "pi",
     timeout: float = 120,
     bin: str | None = None,
+    request_budget=None,
 ) -> str:
     if runner not in {"pi", "opencode", "deepseek"}:
         raise RunnerError(f"未知运行器：{runner}；模型={model}；退出码=未启动；stderr(末20行)=无")
@@ -63,13 +65,15 @@ def run(
     if not model or not thinking or not system or timeout <= 0:
         raise failure("model、thinking、system 必须非空，timeout 必须大于 0")
     check_model(model)
+    if request_budget is not None and runner != 'deepseek':
+        raise failure('固定预算只支持可逐HTTP请求记账的DeepSeek直连；不能把Pi子进程当一次模型请求')
     if runner == "deepseek":
         if files or tools:
             raise failure("deepseek 直连只接受图片，不开放工具和文件附件")
         if labels is not None and len(labels) != len(attachments):
             raise failure("图片标注数量须与图片一致")
         return _deepseek(prompt, attachments, labels, model=model, thinking=thinking, system=system,
-                         timeout=timeout, events=events, env=env, failure=failure)
+                         timeout=timeout, events=events, env=env, failure=failure, request_budget=request_budget)
     if labels:
         raise failure("图片标注只用于 deepseek 直连")
     executable = bin or get_runner_config(runner).get("bin", runner)
@@ -122,7 +126,7 @@ def run(
     return output
 
 
-def _deepseek(prompt, images, labels, *, model, thinking, system, timeout, events, env, failure):
+def _deepseek(prompt, images, labels, *, model, thinking, system, timeout, events, env, failure, request_budget=None):
     """一次请求送入全部图片；每张图前可插一行标注。events=True 时返回 pi 格式的 message_end 事件。"""
     settings = get_runner_config("deepseek")
     key_name = settings.get("api_key_env", "DEEPSEEK_API_KEY")
@@ -146,21 +150,33 @@ def _deepseek(prompt, images, labels, *, model, thinking, system, timeout, event
         settings["base_url"].rstrip("/") + "/chat/completions", data=json.dumps(body).encode(), method="POST",
         headers={"Authorization": f"Bearer {env[key_name]}", "Content-Type": "application/json"})
     for attempt in range(3):
+        ticket = request_budget.begin({'模型': model, '图片数': len(images), 'HTTP尝试': attempt + 1,
+                                       '重试原因': '瞬态HTTP或网络错误' if attempt else None,
+                                       '请求SHA256': hashlib.sha256(request.data).hexdigest()}) if request_budget else None
+        response_usage, request_error = None, None
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as reply:
+            remaining = min(timeout, request_budget.remaining_seconds()) if request_budget else timeout
+            with urllib.request.urlopen(request, timeout=remaining) as reply:
                 result = json.loads(reply.read())
+            response_usage = result.get('usage')
             break
         except urllib.error.HTTPError as exc:
+            request_error = 'HTTP ' + str(exc.code)
             if exc.code not in TRANSIENT or attempt == 2:
                 raise failure("接口错误", exc.code, exc.read()) from None
         except (TimeoutError, urllib.error.URLError, ConnectionError) as exc:
+            request_error = type(exc).__name__
             # 超时不重试，避免一次派发等待数倍时长。
             if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
                 raise failure(f"调用超时（{timeout} 秒）", "超时") from None
             if attempt == 2:
                 raise failure(f"网络错误：{exc}") from None
         except ValueError as exc:
+            request_error = '响应JSON无效'
             raise failure("无法解析接口响应") from exc
+        finally:
+            if request_budget is not None:
+                request_budget.finish(ticket, usage=response_usage, error=request_error)
         time.sleep(2 * 2 ** attempt)
     try:
         choice = result["choices"][0]
@@ -174,10 +190,16 @@ def _deepseek(prompt, images, labels, *, model, thinking, system, timeout, event
     if not events:
         return text
     usage = result.get("usage") or {}
-    hit = usage.get("prompt_cache_hit_tokens", 0)
+    normalized = {}
+    for source, target in (('prompt_tokens', 'promptTokens'), ('prompt_cache_hit_tokens', 'cacheRead'),
+                           ('completion_tokens', 'output'), ('total_tokens', 'totalTokens')):
+        if isinstance(usage.get(source), (int, float)):
+            normalized[target] = usage[source]
+    if 'promptTokens' in normalized and 'cacheRead' in normalized:
+        normalized['input'] = normalized.pop('promptTokens') - normalized['cacheRead']
+    reasoning = (usage.get('completion_tokens_details') or {}).get('reasoning_tokens')
+    if isinstance(reasoning, (int, float)):
+        normalized['reasoning'] = reasoning
     message = {"role": "assistant", "content": [{"type": "text", "text": text}], "stopReason": "stop",
-               "usage": {"input": usage.get("prompt_tokens", 0) - hit, "cacheRead": hit,
-                         "output": usage.get("completion_tokens", 0),
-                         "reasoning": (usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0),
-                         "totalTokens": usage.get("total_tokens", 0)}}
+               "usage": normalized}
     return json.dumps({"type": "message_end", "message": message}, ensure_ascii=False)

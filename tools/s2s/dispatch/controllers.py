@@ -45,7 +45,7 @@ EPISODE_TOOLS = '''
 SERIES_TOOLS = '''
 ## 固定工具
 所有命令从项目根目录运行，Python 使用 uv run python。
-- tools/run_episode.py <剧名> <集号> [--视频 <视频路径>] [--模式 完整转写|定向复核] [--复核要求 <具体变更与位置>]
+- tools/run_episode.py <剧名> <集号> --调度 主控 [--视频 <视频路径>] [--模式 完整转写|定向复核] [--复核要求 <具体变更与位置>]
   固定生产入口按全剧生产任务的视频映射准备镜头、分段、单路声音、字幕、口型、声纹和回听页；无需自行拼接预处理命令。
   按集顺序派发，等本集结束后读取状态.json；不要因为子进程正常退出就把本集标记为验收通过。
 - tools/dispatch_role.py 验收 --集 <参考本集目录> --变量 <vars.json> --模式 跨集 --输出 <结果.json>
@@ -156,6 +156,12 @@ def episode_main(argv=None):
     parser.add_argument('--完成步骤', type=int, choices=range(1, 10))
     parser.add_argument('--超时', type=float, default=900)
     parser.add_argument('--视频', type=Path, help='输入视频；省略时读取全剧生产任务或已有镜头表')
+    parser.add_argument('--调度', choices=('固定', '主控'), default='主控', help='默认原Pi主控；固定为显式E0实验入口，当前真实计价接入未完成')
+    parser.add_argument('--运行目录', type=Path, help='隔离运行根目录；同目录同版本可恢复，不采纳既有黑板')
+    parser.add_argument('--离线夹具', type=Path, help='明确模拟预处理和子角色；绝不授权正式稿')
+    parser.add_argument('--审核', type=Path, help='显式人物审核JSON；路径尚无文件时暂停并输出模板')
+    parser.add_argument('--最大请求数', type=int, default=100, help='包括初答、格式重答与HTTP重试')
+    parser.add_argument('--预检', action='store_true', help='仅验证冻结版本和真实费用预算能力，不启动模型')
     args = parser.parse_args(argv)
     try:
         if args.超时 <= 0:
@@ -165,7 +171,9 @@ def episode_main(argv=None):
         else:
             from s2s.production import run_episode
             result = run_episode(args.剧名, args.集号, video=args.视频,
-                                 mode=args.模式, review=args.复核要求, timeout=args.超时)
+                                 mode=args.模式, review=args.复核要求, timeout=args.超时,
+                                 scheduler=args.调度, run_root=args.运行目录, fixture=args.离线夹具,
+                                 approvals=args.审核, max_requests=args.最大请求数, preflight=args.预检)
     except (OSError, ValueError, RuntimeError, ImportError, subprocess.SubprocessError) as exc:
         result = {'通过': False, '错误': str(exc)}
     print(json.dumps(result, ensure_ascii=False))

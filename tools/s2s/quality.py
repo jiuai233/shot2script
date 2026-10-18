@@ -160,7 +160,7 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
         fail('角色卡编号重复', {}, '不同角色不能共用稳定角色 ID')
     for error in lint_text(text, roles, formal=formal)['错误']:
         fail(error['检查项'], {'行': error['行']}, error['命中词'])
-    for error in check_coverage(directory, script)['错误']:
+    for error in check_coverage(directory, script, allow_pending=not formal)['错误']:
         fail(error['类型'], error['位置'], error['问题'])
 
     roles_by_id = {role['id']: role for role in roles}
@@ -244,7 +244,12 @@ def check_script(directory: str | Path, script='工作稿.md', *, formal=False) 
             shape = re.match(r'^(画外|心声|电话|视频|广播)(?:[，,、]|$)', parenthesis)
             actual_shape = ('设备' if shape and shape[1] in ('电话', '视频', '广播') else
                             shape[1] if shape else '画内')
-            if actual_shape != owner['形态']:
+            if owner['形态'] is None or owner.get('形态待核对'):
+                marked = any(pending.get(q, {}).get('位置', {}).get('句') == ident
+                             for q in re.findall(r'【待核对 (E[0-9]{2,}-Q[0-9]{3,})】', line))
+                if formal or not has_pending(ident) or not marked:
+                    fail('声音形态未确认', {'行': number, '句': ident}, '保留已确认身份，形态须按原始证据核对，不能编造词界')
+            elif actual_shape != owner['形态']:
                 fail('声音形态不一致', {'行': number, '句': ident}, '正文标记与确认声音形态不一致')
 
         for ident in row['动作']:

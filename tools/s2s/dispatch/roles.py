@@ -10,6 +10,7 @@ import time
 from s2s import agent, config
 from s2s.runners import _safe
 from s2s.quality import review_version
+from s2s.run_record import file_hash, save
 from .materials import assemble, dumps, load
 from .results import extract_result, validate_result
 from .transport import decode_response, pi_options
@@ -19,10 +20,12 @@ class DispatchError(RuntimeError):
     pass
 
 
-def settings_for(role, package):
+def settings_for(role, package, *, direct_text=False):
     settings = config.get_agent(role)
     # 须全部查看的帧走 vision 直连；其余按白名单由 pi 按需读取。所有角色仍只用 DeepSeek。
-    if package.view_all:
+    if direct_text and (role not in ('成稿', '验收') or package.images and not package.view_all):
+        raise ValueError('只有无工具纯文本成稿/验收可显式改用直连')
+    if package.view_all or direct_text:
         settings.update(config.get_vision())
         if settings.get('runner') != 'deepseek':
             raise ValueError('须全部查看的帧只能由 deepseek 直连送入')
@@ -80,7 +83,8 @@ def merge_review_issues(parts):
     return issues
 
 
-def review_full(episode, variables, output, *, timeout, call, validator, prompt_file):
+def review_full(episode, variables, output, *, timeout, call, validator, prompt_file,
+                request_budget=None, direct_text=False, resume=False):
     """文本整集检查一次，画面逐段检查；覆盖回执独立保存。"""
     version = review_version(episode)
     folder = output.parent / (output.stem + '-分段')
@@ -91,7 +95,8 @@ def review_full(episode, variables, output, *, timeout, call, validator, prompt_
         path = folder / (name + '.json')
         v = {**variables, **({'片段号': name} if segment else {})}
         receipt = dispatch('验收', episode, v, path, mode='全文审查', timeout=timeout,
-                           call=call, validator=validator, prompt_file=prompt_file, _review_stage=stage)
+                           call=call, validator=validator, prompt_file=prompt_file, _review_stage=stage,
+                           request_budget=request_budget, direct_text=direct_text, resume=resume)
         return load(path), receipt, path
 
     text, _, _ = run_stage('文本')
@@ -132,14 +137,16 @@ def finish_review(episode, output, parts, coverage, *, version, simulated=False)
 
 
 def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path,
-             *, mode=None, scope=None, timeout=300, call=None, validator=None, prompt_file=None, _review_stage=None):
+             *, mode=None, scope=None, timeout=300, call=None, validator=None, prompt_file=None, _review_stage=None,
+             request_budget=None, direct_text=False, resume=False):
     episode, output = Path(episode).resolve(), Path(output).resolve()
     if role == '角色卡' and (mode or variables.get('模式', '建立')) == '建立':
         from .rolecard import establish_rolecard
         return establish_rolecard(episode, variables, output, timeout=timeout, call=call,
-                                  validator=validator, prompt_file=prompt_file)
+                                  validator=validator, prompt_file=prompt_file, request_budget=request_budget, resume=resume)
     if role == '验收' and (mode or variables.get('模式', '全文审查')) == '全文审查' and _review_stage is None:
-        return review_full(episode, variables, output, timeout=timeout, call=call, validator=validator, prompt_file=prompt_file)
+        return review_full(episode, variables, output, timeout=timeout, call=call, validator=validator, prompt_file=prompt_file,
+                           request_budget=request_budget, direct_text=direct_text, resume=resume)
     started = time.monotonic()
     package = None
     retries, success, skipped, usage = 0, False, False, {}
@@ -150,7 +157,7 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
            '输入文件': [], '模型': settings.get('model'), '结果文件': str(output)}
     try:
         package = assemble(role, episode, variables, mode, scope, prompt_file=prompt_file, review_stage=_review_stage)
-        settings = settings_for(role, package)
+        settings = settings_for(role, package, direct_text=direct_text)
         signature = package.signature()
         signature['模型'] = settings
         row.update({'模式': package.mode, '范围': package.scope,
@@ -158,6 +165,19 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                     '输入文件': [str(p) for p in [*package.files, *package.images]],
                     '输入版本': signature, '模型': settings['model']})
         result = cached_result(episode, role, package, signature)
+        # 动作消费者按*.json读取结果；调用元数据不能伪装成动作返回包。
+        metadata = output.with_suffix('.dispatch.meta')
+        simulated = call is not None or validator is not None or prompt_file is not None
+        if result is None and resume and metadata.is_file() and output.is_file():
+            previous = load(metadata)
+            candidate = load(output)
+            if (previous.get('输入版本') == signature and previous.get('模拟调用') is simulated
+                    and previous.get('结果SHA256') == file_hash(output)
+                    and not validate_result(role, candidate, episode, package)):
+                result = candidate
+                old_receipt = previous['回执']
+                read_paths = set(old_receipt['已读帧'])
+                coverage_complete = old_receipt['画面完整']
         skipped = result is not None
         validate = validator or validate_result
         prompt = package.prompt
@@ -175,6 +195,9 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                                                images=package.images if direct else [],
                                                labels=package.labels if direct else None,
                                                system=agent.ROLE_SYSTEM[role] + '\n\n' + package.system,
+                                               **({'request_budget': request_budget.scoped(
+                                                   f'{role}/{package.mode}/{row["片段"] or "整集"}/格式尝试{attempt+1}')}
+                                                  if request_budget is not None else {}),
                                                **{**settings, **options, 'timeout': timeout})
                         response = decode_response(raw)
                     finally:
@@ -218,9 +241,13 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
         temporary.write_text(dumps(result) + '\n', encoding='utf-8')
         temporary.replace(output)
         success = True
-        return {'通过': True, '结果文件': str(output), '跳过': skipped, '重答次数': retries,
-                '画面完整': coverage_complete, '授权帧数': len(package.images),
-                '已读帧数': len(read_paths), '已读帧': sorted(read_paths)}
+        receipt = {'通过': True, '结果文件': str(output), '跳过': skipped, '重答次数': retries,
+                   '画面完整': coverage_complete, '授权帧数': len(package.images),
+                   '已读帧数': len(read_paths), '已读帧': sorted(read_paths)}
+        if resume:
+            save(metadata, {'输入版本': signature, '模拟调用': simulated,
+                            '结果SHA256': file_hash(output), '回执': receipt})
+        return receipt
     except Exception as exc:
         row['错误'] = _safe(str(exc), config.get_environment())
         raise

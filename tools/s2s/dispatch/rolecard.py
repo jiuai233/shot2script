@@ -14,6 +14,7 @@ from jsonschema import Draft202012Validator
 from s2s import agent, config
 from s2s.evidence import evidence_problem
 from s2s.names import name_errors
+from s2s.run_record import save
 from s2s.validate import SCHEMA_DIR, time_seconds, validate_file
 from .materials import Package, dumps, frame_path, load, render
 from .results import extract_json
@@ -66,6 +67,8 @@ def _declarations(episode, people, shots):
                     continue
                 _require(re.fullmatch(re.escape(result['片段']) + r'-T[1-9][0-9]*', ident), '非法临时人物声明：' + ident)
                 target = declared.setdefault(ident, {'片段': result['片段'], '外观': person.get('外观'), '镜头': set()})
+                if not target['外观'] and person.get('外观'):
+                    target['外观'] = person['外观']
                 _require(target['片段'] == result['片段'], '人物片段冲突')
                 target['镜头'].add(row['镜头'])
     _require(set(declared) == set(by_id), '临时清单与动作声明不完整一致')
@@ -260,13 +263,29 @@ def _validate_attribution(data, batch, table, version, shots):
         _require(row['说话人'] is None or row['说话人'] in known, '说话人不在冻结人物表')
         _require(row['说话人'] is not None or row['确定度'] == '存疑', 'null说话人仅限存疑')
         _require(row['确定度'] != '存疑' or row['句'] in blocked, '存疑归属必须有同句阻断')
+        _require(not (row['形态'] is None or row.get('形态待核对')) or row['句'] in blocked,
+                 '形态未定须有同句阻断；可保留已确认身份，不伪造词界')
+        sound = next(s for s in batch if s['id'] == row['句'])
+        mixed = any('换人' in reason or '重叠' in reason for reason in sound.get('核对', {}).get('异常', []))
+        _require(not mixed or row['确定度'] == '存疑' and row['句'] in blocked,
+                 '句内换人或重叠须拆句或保留同句阻断，不能整句确认一个人')
     for row in data['补充建议']:
         _require(row['角色'] in known and row['依据'].strip(), '补充建议人物/依据不合法')
 
 
-def _run_stage(episode, package, validate, output, *, timeout, call, validator, records):
+def _run_stage(episode, package, validate, output, *, timeout, call, validator, records,
+               request_budget=None, resume=False):
     from .roles import DispatchError, settings_for
     settings = settings_for('角色卡', package)
+    cached = output.parent / (output.stem + '-阶段') / (package.mode + '-' + (package.segment['id'] if package.segment else '整集') + '.json')
+    signature = {'资料': package.signature(), '模型': settings, '模拟调用': call is not None or validator is not None}
+    if resume and cached.is_file():
+        previous = load(cached)
+        if previous.get('输入版本') == signature:
+            validate(previous['结果'])
+            if not validator or not validator('角色卡', previous['结果'], episode, package):
+                records.append({'阶段': package.mode, '片段': package.segment['id'] if package.segment else None, '复用': True})
+                return previous['结果']
     prompt = package.prompt
     with pi_options(settings) as options:
         for attempt in range(3):
@@ -278,8 +297,11 @@ def _run_stage(episode, package, validate, output, *, timeout, call, validator, 
             try:
                 response = decode_response((call or agent.run)('角色卡', prompt, attachments=[], images=package.images,
                            labels=package.labels, system=agent.ROLE_SYSTEM['角色卡'] + '\n' + package.system,
+                           **({'request_budget': request_budget.scoped(
+                               f'角色卡/{package.mode}/{record["片段"] or "整集"}/格式尝试{attempt+1}')}
+                              if request_budget is not None else {}),
                            **{**settings, **options, 'timeout': timeout}))
-                record.update({'token用量': response.usage, '已读帧': list(map(str, package.images))})
+                record.update({'token用量': response.usage or None, '已读帧': list(map(str, package.images))})
             finally:
                 record['耗时秒'] = round(time.monotonic() - started, 3)
             try:
@@ -287,6 +309,8 @@ def _run_stage(episode, package, validate, output, *, timeout, call, validator, 
                 validate(result)
                 if validator:
                     _require(not validator('角色卡', result, episode, package), '附加校验失败')
+                if resume:
+                    save(cached, {'输入版本': signature, '结果': result})
                 return result
             except (ValueError, TypeError, KeyError) as exc:
                 debug = output.parent / '校验失败'
@@ -313,7 +337,8 @@ def validate_two_stage_result(episode, result, *, prompt_file=None):
     return materials
 
 
-def establish_rolecard(episode, variables, output, *, timeout, call, validator, prompt_file):
+def establish_rolecard(episode, variables, output, *, timeout, call, validator, prompt_file,
+                       request_budget=None, resume=False):
     """仅发布通过总体校验的最终结果；不修改人物登记、归属或状态。"""
     success, version, records = False, None, []
     started = time.monotonic()
@@ -328,7 +353,8 @@ def establish_rolecard(episode, variables, output, *, timeout, call, validator, 
                        '已确认角色': version['已确认角色'], '身份证据字幕': materials['身份证据字幕']},
                        materials['images'], materials['labels'], prompt_file=prompt_file)
             merge = _run_stage(episode, package, lambda r: _freeze(episode, r, materials, version), output,
-                               timeout=timeout, call=call, validator=validator, records=records)
+                               timeout=timeout, call=call, validator=validator, records=records,
+                               request_budget=request_budget, resume=resume)
         version = {**version, '冻结合并': deepcopy(merge)}
         table, mappings = _freeze(episode, merge, materials, version)
         packages = [_attribution_package(episode, segment, batch, table, mappings, version, prompt_file=prompt_file)
@@ -339,7 +365,8 @@ def establish_rolecard(episode, variables, output, *, timeout, call, validator, 
             shots = {s['id'] for s in load(episode / '镜头表.json')['镜头']
                      if any(time_seconds(s['起']) < time_seconds(b['止']) and time_seconds(s['止']) > time_seconds(b['起']) for b in batch)}
             return _run_stage(episode, package, lambda r: _validate_attribution(r, batch, table, version, shots),
-                              output, timeout=timeout, call=call, validator=validator, records=records)
+                              output, timeout=timeout, call=call, validator=validator, records=records,
+                              request_budget=request_budget, resume=resume)
 
         with ThreadPoolExecutor(max_workers=3) as pool:
             parts = list(pool.map(run, zip(packages, batches)))
@@ -364,12 +391,16 @@ def establish_rolecard(episode, variables, output, *, timeout, call, validator, 
                                      '尝试记录': records, '结果文件': str(output)}, ensure_ascii=False) + '\n')
 
 
-def apply_rolecard_result(episode, result, approvals):
+def apply_rolecard_result(episode, result, approvals, *, publish=None, defer_unreviewed=False):
     """主控显式审核后落板；识别/校验失败零落板，逐文件替换，状态最后写。"""
     episode = Path(episode).resolve()
     result = load(Path(result)) if isinstance(result, (str, Path)) else deepcopy(result)
     approvals = load(Path(approvals)) if isinstance(approvals, (str, Path)) else deepcopy(approvals)
     validate_two_stage_result(episode, result)
+    deferred = approvals is None and defer_unreviewed
+    if deferred:
+        # 明确延期审核，不构造获批身份；N和同句阻断全部保留。
+        approvals = {'结果版本': 2, '输入版本': result['输入版本'], '批准': []}
     _require(isinstance(approvals, dict) and set(approvals) == {'结果版本', '输入版本', '批准'}, '审核必须显式提供版本、输入版本和批准数组')
     _require(approvals['结果版本'] == 2 and approvals['输入版本'] == result['输入版本'], '审核输入版本过期')
     _require(isinstance(approvals['批准'], list), '批准必须为数组')
@@ -438,6 +469,11 @@ def apply_rolecard_result(episode, result, approvals):
             if not any(p['位置'].get('句') == row['句'] and p['级别'] == '阻断'
                        and p['状态'] not in ('已修正', '已裁定') for p in pending):
                 add_pending({'句': row['句']}, '说话人身份未审核或未知', [row['说话人']] if row['说话人'] else [])
+    for action in load(episode / '动作记录.json'):
+        actor = next((p['映射'] for p in temporary if p['id'] == action['执行者']), action['执行者'])
+        if action['关键'] and actor in people and actor not in approved:
+            add_pending({'镜头': action['镜头']}, '关键动作事实保留，但执行者身份尚未审核', [actor],
+                        need='核对该动作人物身份；保留原动作及依据，不作为正式正文事实')
     state = load(episode / '状态.json')
     state['状态'] = '进行中'
     state['步骤']['3'] = True
@@ -468,8 +504,14 @@ def apply_rolecard_result(episode, result, approvals):
     validate_two_stage_result(episode, result)
     writes = [(episode.parent / '角色卡.json', roles),
               *[(episode / f'{kind}.json', value) for kind, value in planned.items()]]
+    receipt = {'通过': True, '本集人物': len(people), '获批映射': approved, '本集新增人物': new_ids}
+    if deferred:
+        receipt['审核状态'] = '未提供审核；没有批准任何本集人物'
+    if publish is not None:
+        publish(writes, receipt)
+        return receipt
     for path, value in writes:
         temporary_path = path.with_name(path.name + '.new')
         temporary_path.write_text(dumps(value) + '\n', encoding='utf-8')
         temporary_path.replace(path)
-    return {'通过': True, '本集人物': len(people), '获批映射': approved, '本集新增人物': new_ids}
+    return receipt

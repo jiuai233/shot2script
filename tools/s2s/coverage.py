@@ -15,7 +15,7 @@ def normalize_text(text: str) -> str:
     return ''.join(ch for ch in text if not ch.isspace() and not unicodedata.category(ch).startswith('P'))
 
 
-def check_coverage(directory: str | Path, script: str | Path = '工作稿.md') -> dict:
+def check_coverage(directory: str | Path, script: str | Path = '工作稿.md', *, allow_pending=False) -> dict:
     directory = Path(directory)
     script = Path(script)
     script = script if script.is_absolute() else directory / script
@@ -104,9 +104,31 @@ def check_coverage(directory: str | Path, script: str | Path = '工作稿.md') -
             fail('重复动作', {'动作': ident, '行': [r['行'] for r in mapping if ident in r['动作']]},
                  f'同一动作引用 {count} 次')
     covered_actions = set(action_counts)
+
+    def held_for_identity(action):
+        if not allow_pending:
+            return False
+        try:
+            roles_path = directory / '角色卡.json'
+            roles = read_json(roles_path if roles_path.is_file() else directory.parent / '角色卡.json')
+            temporary = {r['id']: r['映射'] for r in read_json(directory / '临时人物.json')}
+            local_path = directory / '本集人物.json'
+            local = {r['id']: r['审核C'] for r in read_json(local_path)['人物']} if local_path.is_file() else {}
+            actor = temporary.get(action['执行者']) or action['执行者']
+            resolved = local.get(actor, actor)
+            if any(r['id'] == resolved and r['状态'] == '已确认' for r in roles):
+                return False
+            pending = read_json(directory / '待核对.json') + read_json(directory / '问题清单.json')
+            return any(row.get('级别') == '阻断' and row.get('位置', {}).get('镜头') == action['镜头']
+                       and {action['执行者'], actor}.intersection(row.get('相关人物', []))
+                       and not (row.get('状态') in ('已修正', '已裁定') and row.get('复核结果')) for row in pending)
+        except (OSError, ValueError, TypeError, KeyError):
+            return False
+
     for entry in actions:
         if entry['关键'] and entry.get('确定度') != '存疑' and entry['id'] not in covered_actions:
-            fail('关键动作未覆盖', {'文件': '动作记录.json', '动作': entry['id']}, '关键动作未在对照表中出现')
+            if not held_for_identity(entry):
+                fail('关键动作未覆盖', {'文件': '动作记录.json', '动作': entry['id']}, '关键动作未在对照表中出现')
 
     mapped_lines = Counter(entry['行'] for entry in mapping)
     for number, count in mapped_lines.items():

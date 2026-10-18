@@ -9,6 +9,7 @@ from jsonschema import Draft202012Validator
 from s2s.validate import validate_file, time_seconds
 from s2s.names import name_errors
 from s2s.quality import check_script
+from s2s.action_placement import apply_placements
 from .materials import dumps, load
 
 # 实测正常片段中有人物而无动作的镜头最多约一半，整段漏看的片段超过八成。
@@ -172,6 +173,10 @@ def validate_result(role: str, data, episode: Path, package) -> list[str]:
             check('临时人物', temporary)
             check('动作记录', rows)
         elif role == '成稿':
+            try:
+                check('动作记录', apply_placements(load(episode / '动作记录.json'), data, required=package.require_placement))
+            except (ValueError, TypeError, KeyError) as exc:
+                errors.append(str(exc))
             script = context / '工作稿.md'
             if script.is_symlink():
                 script.unlink()
