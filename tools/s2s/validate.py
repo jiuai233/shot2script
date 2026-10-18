@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from jsonschema import Draft202012Validator
+from s2s.names import name_errors
 
 SCHEMA_DIR = Path(__file__).with_name('schemas')
 TYPE_ALIASES = {'roles': '角色卡', 'shots': '镜头表', 'segments': '片段表',
@@ -17,10 +18,10 @@ TYPE_ALIASES = {'roles': '角色卡', 'shots': '镜头表', 'segments': '片段�
     'voiceprint_candidates': '声纹候选', 'speech_regions': '人声段', 'decision_migrations': '裁定迁移'}
 CURVE_TIME_RE = re.compile(r'^[0-9]{2}:[0-5][0-9]\.(?:[0-9]|[0-9]{3})$')
 TIME_RE = re.compile(r'^[0-9]{2}:[0-5][0-9]\.[0-9]$')
-ID_RE = re.compile(r'^E([0-9]{2,})-([SKAQPVTR])([0-9]+)(?:-T([1-9][0-9]*))?$')
+ID_RE = re.compile(r'^E([0-9]{2,})-([SKAQPVTRN])([0-9]+)(?:-T([1-9][0-9]*))?$')
 ID_FIELDS = {'id', '标签', '声线', '镜头', '句', '动作', '执行者', '对象', '说话人',
              '相关人物', '衔接前', '衔接后', '首次出场', '未决问题', '本集新增人物',
-             '片段', '出现镜头', '映射', '涉及角色', '新句号', 'cannot-link'}
+             '片段', '出现镜头', '映射', '涉及角色', '新句号', 'cannot-link', '成员', '审核C', '候选C'}
 
 
 def time_seconds(value: str) -> float:
@@ -48,7 +49,8 @@ def _walk(value, path=()):
     yield path, value
     if isinstance(value, dict):
         for key, child in value.items():
-            yield from _walk(child, (*path, key))
+            if key != '输入版本':
+                yield from _walk(child, (*path, key))
     elif isinstance(value, list):
         for i, child in enumerate(value):
             yield from _walk(child, (*path, i))
@@ -175,6 +177,71 @@ def _check_diarization(data, fail):
         fail(('类间相似度矩阵',), '类间相似度矩阵维度与矩阵声线顺序不一致')
 
 
+def episode_people_errors(directory, table):
+    """N只在本集登记；原始输入变化使登记失效，自身审核落板不改变原始声明。"""
+    directory = Path(directory)
+    errors = []
+    schema = read_json(SCHEMA_DIR / '本集人物.schema.json')
+    if not Draft202012Validator(schema).is_valid(table):
+        return ['本集人物结构不合法']
+    rows = table['人物']
+    if not rows and table['输入版本'] is None:
+        return []  # 初始化空表不是一次成功识别。
+    version = table['输入版本']
+    if not isinstance(version, dict) or not {'规则', '文件', '临时声明', '已确认角色', '模型', '候选', '人物文件', '冻结合并'} <= version.keys():
+        return ['本集人物缺少完整输入版本']
+    if version['规则'] != '角色卡两阶段-v2-起点owner-整句帧-固定N':
+        errors.append('本集人物规则版本过期')
+    try:
+        for filename, size, mtime in version['文件']:
+            path = Path(filename)
+            current = (path.stat().st_size, path.stat().st_mtime_ns) if path.is_file() else (None, None)
+            if current != (size, mtime):
+                errors.append('本集人物输入版本过期：' + filename)
+        temporary = read_json(directory / '临时人物.json')
+        declaration = [{k: p[k] for k in ('id', '片段', '外观', '出现镜头')} for p in temporary]
+        if declaration != version['临时声明']:
+            errors.append('本集人物临时声明版本过期')
+        roles_path = directory / '角色卡.json'
+        roles = read_json(roles_path if roles_path.exists() else directory.parent / '角色卡.json')
+        known = {r['id']: r for r in roles if r['状态'] == '已确认'}
+        for source in version['已确认角色']:
+            if source != {k: v for k, v in known.get(source['id'], {}).items() if k != '性格总结'}:
+                errors.append('本集人物已确认C版本过期')
+        ids, members = set(), set()
+        for row in rows:
+            if row['id'] in ids or not row['id'].startswith(directory.name + '-N'):
+                errors.append('本集人物编号重复或跨集')
+            ids.add(row['id'])
+            if any(p in members or p not in {t['id'] for t in temporary} for p in row['成员']):
+                errors.append('本集人物成员重复或未登记')
+            members.update(row['成员'])
+            if row['候选C'] is not None and row['候选C'] not in known:
+                errors.append('本集人物候选C不是已确认角色')
+            if row['审核C'] is not None:
+                if row['审核C'] not in known or row['状态'] != '已审核' or not (row['审核依据'] or '').strip():
+                    errors.append('本集人物审核C/状态/依据不合法')
+            elif row['状态'] != '待审核' or row['审核依据'] is not None:
+                errors.append('本集人物未审核状态不合法')
+        from s2s.dispatch.rolecard import _freeze
+        from s2s.dispatch.roles import settings_for
+        from s2s.dispatch.materials import Package
+        if settings_for('角色卡', Package('', view_all=True)) != version['模型']:
+            errors.append('本集人物模型配置版本过期')
+        expected, _ = _freeze(directory, version['冻结合并'], {'临时人物': version['候选']}, version)
+        normalized = [{**r, '审核C': None, '审核依据': None, '状态': '待审核'} for r in rows]
+        if normalized != expected['人物']:
+            errors.append('本集人物与冻结合并不一致')
+        source_dir = next(Path(p).parent for p, _, _ in version['人物文件'] if Path(p).name == '临时人物.json')
+        declared_paths = {p for p, _, _ in version['文件'] if Path(p).parent == (source_dir / '派发结果/动作识别').resolve()}
+        if declared_paths != {str(p.resolve()) for p in (source_dir / '派发结果/动作识别').glob('*.json')}:
+            errors.append('本集人物动作声明来源版本过期')
+        errors.extend(message for _, message in name_errors(rows))
+    except (OSError, ValueError, KeyError, TypeError, StopIteration) as exc:
+        errors.append('本集人物版本不可核验：' + str(exc))
+    return errors
+
+
 def validate_file(file: str | Path, data_type: str | None = None) -> dict:
     file = Path(file)
     errors = []
@@ -243,6 +310,8 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
                 if time_seconds(start) > time_seconds(end):
                     fail(path, '起晚于止')
             for key, child in value.items():
+                if key == '输入版本':
+                    continue
                 time_pattern = (CURVE_TIME_RE if kind == '口型记录' and key == '时间'
                                 and any(p in ('曲线', '模型曲线') for p in path) else TIME_RE)
                 if key in ('起', '止', '时间', '时长') and isinstance(child, str) and not time_pattern.fullmatch(child):
@@ -263,7 +332,7 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
     times_and_episode(data)
 
     item_field = {'镜头表': '镜头', '片段表': '片段', '全剧状态': '集',
-                  '口型记录': '句', '声纹聚类': '句列表', '声纹候选': '声线'}.get(kind)
+                  '口型记录': '句', '声纹聚类': '句列表', '声纹候选': '声线', '本集人物': '人物'}.get(kind)
     records = _items(data, item_field)
     key = {'归属表': '句', '对照表': '行', '全剧状态': '集', '口型记录': '句',
            '声纹聚类': '句', '声纹候选': '声线', '裁定迁移': '新句号'}.get(kind, 'id')
@@ -312,7 +381,7 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
         source, problem = load_companion(target_kind, target_ep)
         if problem:
             return None, problem
-        field = {'镜头表': '镜头', '片段表': '片段'}.get(target_kind)
+        field = {'镜头表': '镜头', '片段表': '片段', '本集人物': '人物'}.get(target_kind)
         return {r[id_field] for r in _items(source, field)
                 if isinstance(r, dict) and isinstance(r.get(id_field), str)}, None
 
@@ -369,17 +438,77 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
                 reference(path, value, target)
         if kind == '角色卡' and field == '标签':
             reference(path, value, '声音记录', '声线')
-        if field in ('执行者', '对象', '说话人', '相关人物', '映射', '涉及角色'):
+        if kind == '本集人物' and field == '成员':
+            reference(path, value, '临时人物')
+        if field in ('执行者', '对象', '说话人', '相关人物', '映射', '涉及角色', '审核C', '候选C'):
             if re.fullmatch(r'C[0-9]{3,}', value):
                 reference(path, value, '角色卡')
             elif re.fullmatch(r'E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*', value):
                 reference(path, value, '临时人物')
+            elif re.fullmatch(r'E[0-9]{2,}-N[0-9]{3,}', value):
+                reference(path, value, '本集人物')
+                table, problem = load_companion('本集人物')
+                if not problem:
+                    for message in episode_people_errors(board_dir, table):
+                        fail(path, message)
+    if kind == '本集人物' and schema_valid:
+        for message in episode_people_errors(board_dir, data):
+            fail((), message)
+    if kind == '归属表' and schema_valid:
+        for i, row in enumerate(data):
+            if not row['依据'].strip():
+                fail((i, '依据'), '归属依据不能为空')
+            if row['说话人'] is None:
+                pending, problem = load_companion('待核对')
+                if row['确定度'] != '存疑' or problem or not any(
+                        p.get('位置', {}).get('句') == row['句'] and p.get('级别') == '阻断'
+                        and p.get('状态') not in ('已修正', '已裁定') for p in pending or []):
+                    fail((i, '说话人'), 'null归属仅限存疑且须有同句未决阻断')
+            if row['形态'] is None or row.get('形态待核对'):
+                pending, problem = load_companion('待核对')
+                if problem or not any(p.get('位置', {}).get('句') == row['句'] and p.get('级别') == '阻断'
+                                      and p.get('状态') not in ('已修正', '已裁定') for p in pending or []):
+                    fail((i, '形态'), '形态待核对须有同句未决阻断，已确认身份证据仍保留')
     if kind == '口型记录':
         source, problem = load_companion('声音记录')
         if problem:
             fail(('句',), problem)
         _check_lipsync(data, source, file, reference, fail)
     if schema_valid:
+        if kind == '角色卡':
+            for i, message in name_errors(data):
+                fail((i, '名称'), message)
+        elif kind == '动作记录':
+            shots, problem = load_companion('镜头表')
+            if problem:
+                fail((), problem)
+            elif not Draft202012Validator(read_json(SCHEMA_DIR / '镜头表.schema.json')).is_valid(shots):
+                fail((), '引用镜头表结构不符合数据约定')
+            else:
+                by_id = {s['id']: s for s in shots['镜头']}
+                dense_frames = {}
+                for index in (board_dir / '素材/frames_dense').rglob('帧.json'):
+                    try:
+                        dense = read_json(index)
+                        if not validate_file(index, '加密帧索引')['通过'] or dense['视频'] != shots['视频']:
+                            continue
+                        for frame in dense['帧']:
+                            dense_frames.setdefault(frame['文件'], []).append(time_seconds(frame['时间']))
+                    except (OSError, ValueError):
+                        continue
+                for i, action in enumerate(data):
+                    if not action['动作'].strip():
+                        fail((i, '动作'), '动作内容不能为空')
+                    shot = by_id.get(action['镜头'])
+                    if shot is None:
+                        continue
+                    start, end = time_seconds(shot['起']), time_seconds(shot['止'])
+                    if not start <= time_seconds(action['起']) <= time_seconds(action['止']) <= end:
+                        fail((i,), '动作时间越出镜头范围')
+                    frames = {f['文件'] for f in shot['帧']}
+                    for j, frame in enumerate(action['依据帧']):
+                        if frame not in frames and not any(start <= t < end for t in dense_frames.get(frame, [])):
+                            fail((i, '依据帧', j), '依据帧不在本镜头或有效加密帧索引中：' + frame)
         if kind == '镜头表':
             _check_shots(data, fail)
         elif kind == '片段表':

@@ -31,11 +31,11 @@ def checked(text, a, b, i=1):
 
 def test_exact_migration_preserves_final_text_only_with_identical_coverage():
     old = sound('旧识别', 1, 2)
-    new = checked('新识别', 1, 2)
+    new = checked('旧识别', 1, 2)
     rows, mapping = migrate([new], {'声音快照':[old], '结果':[decision(old)]})
     assert rows[0]['文本'] == '人工确定' and rows[0]['核对']['状态'] == '人工确认'
     assert mapping[0]['状态'] == '已沿用'
-    assert new['文本'] == '新识别'
+    assert new['文本'] == '旧识别'
 
 
 @pytest.mark.parametrize('kind', ['split','merge','boundary'])

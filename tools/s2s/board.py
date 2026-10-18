@@ -35,6 +35,7 @@ def initialize_board(name: str, episodes: int, root: str | Path | None = None) -
             files[folder / f'{kind}.json'] = []
         files[folder / '镜头表.json'] = {'集': ep, '视频': '', '时长': '00:00.0', '镜头': []}
         files[folder / '片段表.json'] = {'集': ep, '片段': []}
+        files[folder / '本集人物.json'] = {'版本': 1, '输入版本': None, '人物': []}
         files[folder / '状态.json'] = initial_state(ep)
         for name in ('工作稿.md', '验收报告.md', '正式稿.md'):
             files[folder / name] = ''

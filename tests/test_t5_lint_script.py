@@ -17,7 +17,7 @@ def rules(text, **kwargs):
 def test_prd_example_is_exact_fixture_and_passes():
     prd = Path('docs/视频逐镜头画声转写PRD.md').read_text(encoding='utf-8')
     section = prd.split('### 2.3 表达示例', 1)[1].split('### 2.4', 1)[0]
-    extracted = '\n'.join(line[2:].rstrip() for line in section.splitlines() if line.startswith('> ')) + '\n'
+    extracted = section.split('```text\n', 1)[1].split('```', 1)[0]
     assert EXAMPLE == extracted
     assert lint_text(EXAMPLE)['通过']
     assert lint_text(EXAMPLE, ROLES, formal=True)['通过']

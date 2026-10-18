@@ -29,11 +29,11 @@ def test_diarize_cli_constraint_options(tmp_path, monkeypatch, capsys):
     cli = module("t3g_diarize", "tools/diarize.py")
     path=tmp_path/"sounds.json";path.write_text("[]")
     def fake_run(source, records, **kwargs):
-        assert kwargs["constraints"]["constraints"] == ["grok","max_speakers"]
-        assert kwargs["constraints"]["max_speakers"] == 6
+        assert kwargs["constraints"]["constraints"] == ["lipsync"]
+        assert "max_speakers" not in kwargs["constraints"]
         return {"句列表":[],"类别":[],"运行":{}}
     monkeypatch.setattr(cli,"run",fake_run)
-    assert cli.main(["missing.wav",str(path),str(tmp_path/"result.json"),"--约束","grok","max_speakers","--人数上限","6"]) == 0
+    assert cli.main(["missing.wav",str(path),str(tmp_path/"result.json"),"--约束","lipsync"]) == 0
     assert json.loads(capsys.readouterr().out)["类数"] == 0
 
 

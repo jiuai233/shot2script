@@ -88,6 +88,60 @@
       },
       "说明": {
         "type": "string"
+      },
+      "排布": {
+        "type": "object",
+        "properties": {
+          "位置": {
+            "enum": [
+              "对白括号",
+              "独立△"
+            ]
+          },
+          "句": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "依据": {
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "表述": {
+            "type": "string",
+            "pattern": "\\S"
+          }
+        },
+        "required": [
+          "位置",
+          "句",
+          "依据"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "位置": {
+                  "const": "对白括号"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "句": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        ]
       }
     },
     "required": [

@@ -1,4 +1,4 @@
-"""按镜头数及帧预算分段，并保留邻段边界镜头引用。"""
+"""按镜头数及动作识别送图帧预算分段，并保留邻段边界镜头引用。"""
 
 import argparse
 import json
@@ -7,7 +7,21 @@ from pathlib import Path
 from .timefmt import to_sec
 
 
-def partition_sizes(count: int, target: int = 6, soft_limit: int = 8) -> list[int]:
+def per_second(shot: dict) -> list[dict]:
+    """动作识别送图：整集时间轴每秒取一点（n+0.5 秒），每点挑本镜头最近的一帧；没有取点的短镜头只留中间帧。"""
+    frames = shot.get("帧", [])
+    start, end = to_sec(shot["起"]), to_sec(shot["止"])
+    picked = []
+    for n in range(int(start), int(end) + 1):
+        if start <= n + 0.5 < end:
+            best = min(frames, key=lambda f: abs(to_sec(f["时间"]) - n - 0.5), default=None)
+            if best is not None and best not in picked:
+                picked.append(best)
+    middle = len(frames) // 2
+    return sorted(picked, key=lambda f: to_sec(f["时间"])) or frames[middle:middle + 1]
+
+
+def partition_sizes(count: int, target: int = 17, soft_limit: int = 20) -> list[int]:
     if not isinstance(count, int) or count < 0:
         raise ValueError("镜头数须为非负整数")
     if not isinstance(target, int) or not isinstance(soft_limit, int) or not 1 <= target <= soft_limit:
@@ -22,7 +36,7 @@ def partition_sizes(count: int, target: int = 6, soft_limit: int = 8) -> list[in
     return sizes
 
 
-def build_segments(table: dict, *, target: int = 6, soft_limit: int = 8, frame_budget: int = 36, context_budget: int = 48) -> dict:
+def build_segments(table: dict, *, target: int = 17, soft_limit: int = 20, frame_budget: int = 40, context_budget: int = 48) -> dict:
     partition_sizes(0, target, soft_limit)
     if any(not isinstance(n, int) or n < 1 for n in (frame_budget, context_budget)):
         raise ValueError("帧预算须为正整数")
@@ -43,11 +57,12 @@ def build_segments(table: dict, *, target: int = 6, soft_limit: int = 8, frame_b
     while offset < len(shots):
         index += 1
         size = partition_sizes(len(shots) - offset, target, soft_limit)[0]
+        # 预算按动作识别实际送出的帧计算。
         def fits(n):
-            own = sum(len(shot.get('帧', [])) for shot in shots[offset:offset + n])
-            context = own + (len(shots[offset - 1].get('帧', [])) if offset else 0)
+            own = sum(len(per_second(shot)) for shot in shots[offset:offset + n])
+            context = own + (len(per_second(shots[offset - 1])) if offset else 0)
             if offset + n < len(shots):
-                context += len(shots[offset + n].get('帧', []))
+                context += len(per_second(shots[offset + n]))
             return own <= frame_budget and context <= context_budget
         while size > 1 and not fits(size):
             size -= 1
@@ -74,11 +89,11 @@ def write_segments(shot_table: str | Path, **kwargs) -> dict:
 
 
 def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(description="默认每段 6 镜头、软上限 8，按帧预算缩小片段")
+    parser = argparse.ArgumentParser(description="默认每段 17 镜头、软上限 20，按送图帧预算缩小片段")
     parser.add_argument("shot_table")
-    parser.add_argument("--shots-per-segment", type=int, default=6)
-    parser.add_argument("--soft-limit", type=int, default=8)
-    parser.add_argument("--frame-budget", type=int, default=36)
+    parser.add_argument("--shots-per-segment", type=int, default=17)
+    parser.add_argument("--soft-limit", type=int, default=20)
+    parser.add_argument("--frame-budget", type=int, default=40)
     parser.add_argument("--context-frame-budget", type=int, default=48)
     args = parser.parse_args(argv)
     try:

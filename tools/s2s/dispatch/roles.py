@@ -9,6 +9,8 @@ import time
 
 from s2s import agent, config
 from s2s.runners import _safe
+from s2s.quality import review_version
+from s2s.run_record import file_hash, save
 from .materials import assemble, dumps, load
 from .results import extract_result, validate_result
 from .transport import decode_response, pi_options
@@ -18,11 +20,15 @@ class DispatchError(RuntimeError):
     pass
 
 
-def settings_for(role, package):
+def settings_for(role, package, *, direct_text=False):
     settings = config.get_agent(role)
-    # 角色卡配置默认是文本模型；只要本次提供帧，也必须走当前 vision 配置。
-    if package.images:
+    # 须全部查看的帧走 vision 直连；其余按白名单由 pi 按需读取。所有角色仍只用 DeepSeek。
+    if direct_text and (role not in ('成稿', '验收') or package.images and not package.view_all):
+        raise ValueError('只有无工具纯文本成稿/验收可显式改用直连')
+    if package.view_all or direct_text:
         settings.update(config.get_vision())
+        if settings.get('runner') != 'deepseek':
+            raise ValueError('须全部查看的帧只能由 deepseek 直连送入')
     config.check_model(settings['model'])
     return settings
 
@@ -77,8 +83,10 @@ def merge_review_issues(parts):
     return issues
 
 
-def review_full(episode, variables, output, *, timeout, call, validator, prompt_file):
+def review_full(episode, variables, output, *, timeout, call, validator, prompt_file,
+                request_budget=None, direct_text=False, resume=False):
     """文本整集检查一次，画面逐段检查；覆盖回执独立保存。"""
+    version = review_version(episode)
     folder = output.parent / (output.stem + '-分段')
     folder.mkdir(parents=True, exist_ok=True)
     parts, coverage = [], []
@@ -87,7 +95,8 @@ def review_full(episode, variables, output, *, timeout, call, validator, prompt_
         path = folder / (name + '.json')
         v = {**variables, **({'片段号': name} if segment else {})}
         receipt = dispatch('验收', episode, v, path, mode='全文审查', timeout=timeout,
-                           call=call, validator=validator, prompt_file=prompt_file, _review_stage=stage)
+                           call=call, validator=validator, prompt_file=prompt_file, _review_stage=stage,
+                           request_budget=request_budget, direct_text=direct_text, resume=resume)
         return load(path), receipt, path
 
     text, _, _ = run_stage('文本')
@@ -100,33 +109,44 @@ def review_full(episode, variables, output, *, timeout, call, validator, prompt_
             coverage.append({'片段': segment['id'], '状态': '完成' if receipt['画面完整'] else '画面未完整审查',
                              '授权帧数': receipt['授权帧数'], '已读帧数': receipt['已读帧数'],
                              '已读帧': receipt['已读帧'], '结果文件': str(path)})
-    return finish_review(episode, output, parts, coverage)
+    return finish_review(episode, output, parts, coverage, version=version,
+                         simulated=call is not None or validator is not None or prompt_file is not None)
 
 
-def finish_review(episode, output, parts, coverage):
+def finish_review(episode, output, parts, coverage, *, version, simulated=False):
     issues = merge_review_issues(parts)
-    complete = all(c['状态'] == '完成' for c in coverage)
+    expected = [row['id'] for row in load(episode / '片段表.json')['片段']]
+    complete = bool(expected) and [c['片段'] for c in coverage] == expected and all(c['状态'] == '完成' for c in coverage)
+    unchanged = version == review_version(episode)
     shots = load(episode / '镜头表.json')['镜头']
+    sounds = load(episode / '声音记录.json')
     lines = (episode / '工作稿.md').read_text(encoding='utf-8').splitlines()
     result = {'模式': '全文审查', '集': int(episode.name[1:]),
               '审查范围': {'行': f'1-{len(lines)}', '场景': list(dict.fromkeys(s for part in parts for s in part['审查范围']['场景'])),
                            '镜头': f"{shots[0]['id']} 至 {shots[-1]['id']}" if complete else '画面未完整审查',
-                           '对白句': parts[0]['审查范围']['对白句']},
+                           '对白句': f"{sounds[0]['id']} 至 {sounds[-1]['id']}" if sounds else '无对白'},
               '问题': issues, '复核': [],
               '统计': {level: sum(i['级别'] == level for i in issues) for level in ('阻断', '规范')},
-              '结论': '通过' if complete and all(p['结论'] == '通过' for p in parts) and not issues else '不通过'}
+              '结论': '通过' if complete and unchanged and all(p['结论'] == '通过' for p in parts) and not issues else '不通过'}
     output.write_text(dumps(result) + '\n', encoding='utf-8')
     unique_read = {p for c in coverage for p in c['已读帧']}
-    coverage_result = {'全文审查完成': complete, '片段': coverage, '实际读取不同帧数': len(unique_read)}
+    coverage_result = {'全文审查完成': complete, '片段': coverage, '实际读取不同帧数': len(unique_read),
+                       '输入版本': version, '输入未变': unchanged, '模拟调用': simulated, '验收结果': result}
     output.with_suffix('.coverage.json').write_text(dumps(coverage_result) + '\n', encoding='utf-8')
     return {'通过': True, '结果文件': str(output), '全文审查完成': complete, '画面完整': complete}
 
 
 def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path,
-             *, mode=None, scope=None, timeout=180, call=None, validator=None, prompt_file=None, _review_stage=None):
+             *, mode=None, scope=None, timeout=300, call=None, validator=None, prompt_file=None, _review_stage=None,
+             request_budget=None, direct_text=False, resume=False):
     episode, output = Path(episode).resolve(), Path(output).resolve()
+    if role == '角色卡' and (mode or variables.get('模式', '建立')) == '建立':
+        from .rolecard import establish_rolecard
+        return establish_rolecard(episode, variables, output, timeout=timeout, call=call,
+                                  validator=validator, prompt_file=prompt_file, request_budget=request_budget, resume=resume)
     if role == '验收' and (mode or variables.get('模式', '全文审查')) == '全文审查' and _review_stage is None:
-        return review_full(episode, variables, output, timeout=timeout, call=call, validator=validator, prompt_file=prompt_file)
+        return review_full(episode, variables, output, timeout=timeout, call=call, validator=validator, prompt_file=prompt_file,
+                           request_budget=request_budget, direct_text=direct_text, resume=resume)
     started = time.monotonic()
     package = None
     retries, success, skipped, usage = 0, False, False, {}
@@ -137,7 +157,7 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
            '输入文件': [], '模型': settings.get('model'), '结果文件': str(output)}
     try:
         package = assemble(role, episode, variables, mode, scope, prompt_file=prompt_file, review_stage=_review_stage)
-        settings = settings_for(role, package)
+        settings = settings_for(role, package, direct_text=direct_text)
         signature = package.signature()
         signature['模型'] = settings
         row.update({'模式': package.mode, '范围': package.scope,
@@ -145,25 +165,46 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                     '输入文件': [str(p) for p in [*package.files, *package.images]],
                     '输入版本': signature, '模型': settings['model']})
         result = cached_result(episode, role, package, signature)
+        # 动作消费者按*.json读取结果；调用元数据不能伪装成动作返回包。
+        metadata = output.with_suffix('.dispatch.meta')
+        simulated = call is not None or validator is not None or prompt_file is not None
+        if result is None and resume and metadata.is_file() and output.is_file():
+            previous = load(metadata)
+            candidate = load(output)
+            if (previous.get('输入版本') == signature and previous.get('模拟调用') is simulated
+                    and previous.get('结果SHA256') == file_hash(output)
+                    and not validate_result(role, candidate, episode, package)):
+                result = candidate
+                old_receipt = previous['回执']
+                read_paths = set(old_receipt['已读帧'])
+                coverage_complete = old_receipt['画面完整']
         skipped = result is not None
         validate = validator or validate_result
         prompt = package.prompt
         if result is None:
-            with pi_options(settings, read_paths=package.images) as options:
+            direct = settings.get('runner') == 'deepseek'
+            with pi_options(settings, read_paths=() if direct else package.images) as options:
                 for attempt in range(3):
                     retries = attempt
                     attempt_started = time.monotonic()
                     attempt_row = {'尝试': attempt + 1}
                     row.setdefault('尝试记录', []).append(attempt_row)
                     try:
-                        raw = (call or agent.run)(role, prompt, attachments=[], images=[],
+                        config.check_model(settings['model'])
+                        raw = (call or agent.run)(role, prompt, attachments=[],
+                                               images=package.images if direct else [],
+                                               labels=package.labels if direct else None,
+                                               system=agent.ROLE_SYSTEM[role] + '\n\n' + package.system,
+                                               **({'request_budget': request_budget.scoped(
+                                                   f'{role}/{package.mode}/{row["片段"] or "整集"}/格式尝试{attempt+1}')}
+                                                  if request_budget is not None else {}),
                                                **{**settings, **options, 'timeout': timeout})
                         response = decode_response(raw)
                     finally:
                         attempt_row['耗时秒'] = round(time.monotonic() - attempt_started, 3)
-                    read_paths = {str(Path(p).resolve()) for p in response.reads}
                     authorized = {str(p) for p in package.images}
-                    read_paths &= authorized
+                    # 直连时全部帧随请求送入；pi 按需读取时以实际 read 记录为准。
+                    read_paths = set(authorized) if direct else {str(Path(p).resolve()) for p in response.reads} & authorized
                     missing = authorized - read_paths
                     attempt_row.update({'读取图片数': len(read_paths), '已读帧': sorted(read_paths),
                                         '授权帧数': len(authorized), '未读帧': sorted(missing),
@@ -174,13 +215,7 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                     try:
                         result = extract_result(role, response.text)
                         errors = validate(role, result, episode, package)
-                        coverage_complete = not missing
-                        if call is None and role in ('动作识别', '验收') and missing:
-                            if attempt == 2 and role == '验收' and not errors:
-                                result['结论'] = '不通过'
-                                row['画面状态'] = '画面未完整审查'
-                            else:
-                                errors.append('尚未使用 read 读取全部帧：' + '、'.join(sorted(missing)))
+                        coverage_complete = not missing or not package.view_all
                     except (ValueError, TypeError, KeyError) as exc:
                         errors = [str(exc)]
                     if not errors:
@@ -194,16 +229,25 @@ def dispatch(role: str, episode: str | Path, variables: dict, output: str | Path
                         raise DispatchError('格式校验失败，已重答 2 次：' + '; '.join(errors))
                     prompt = (package.prompt + '\n\n## 上次返回\n' + response.text
                               + '\n\n## 校验错误\n' + dumps(errors)
-                              + '\n请修正这些错误，重新返回完整结果，不省略其他字段。每次重答都是新调用，必须重新读取全部授权帧，不能只补读遗漏帧。')
+                              + '\n请修正这些错误，重新返回完整结果，不省略其他字段。'
+                              + ('每次重答都是新调用，必须重新查看全部附图。' if direct
+                                 else '每次重答都是新调用，必须重新读取全部授权帧，不能只补读遗漏帧。'))
+        if role == '角色卡' and (package.signature() != {k: v for k, v in signature.items() if k != '模型'}
+                               or settings_for(role, package) != signature['模型']):
+            raise DispatchError('角色卡输入在核对期间变化，结果不发布')
         output.parent.mkdir(parents=True, exist_ok=True)
         # 主控决定目标路径；先校验成功才替换旧结果。
         temporary = output.with_name(output.name + '.new')
         temporary.write_text(dumps(result) + '\n', encoding='utf-8')
         temporary.replace(output)
         success = True
-        return {'通过': True, '结果文件': str(output), '跳过': skipped, '重答次数': retries,
-                '画面完整': coverage_complete, '授权帧数': len(package.images),
-                '已读帧数': len(read_paths), '已读帧': sorted(read_paths)}
+        receipt = {'通过': True, '结果文件': str(output), '跳过': skipped, '重答次数': retries,
+                   '画面完整': coverage_complete, '授权帧数': len(package.images),
+                   '已读帧数': len(read_paths), '已读帧': sorted(read_paths)}
+        if resume:
+            save(metadata, {'输入版本': signature, '模拟调用': simulated,
+                            '结果SHA256': file_hash(output), '回执': receipt})
+        return receipt
     except Exception as exc:
         row['错误'] = _safe(str(exc), config.get_environment())
         raise
@@ -219,19 +263,29 @@ def main():
     parser = argparse.ArgumentParser(description='按资料隔离规则派发一个子 agent')
     parser.add_argument('角色', choices=('动作识别', '角色卡', '成稿', '验收'))
     parser.add_argument('--集', required=True)
-    parser.add_argument('--变量', required=True, help='JSON 对象；动作识别必须包含片段号')
+    parser.add_argument('--变量', help='JSON 对象；动作识别必须包含片段号')
     parser.add_argument('--模式')
     parser.add_argument('--范围')
-    parser.add_argument('--输出', required=True)
+    parser.add_argument('--输出')
+    parser.add_argument('--应用结果', help='只应用已完成的角色卡两阶段结果，不调用模型')
+    parser.add_argument('--审核', help='主控显式审核JSON，含结果版本、输入版本、批准数组')
     parser.add_argument('--提示词', help='对比试验提示词文件，默认使用正式提示词')
-    parser.add_argument('--超时', type=float, default=180)
+    parser.add_argument('--超时', type=float, default=300)
     args = parser.parse_args()
     try:
-        variables = load(Path(args.变量))
-        if not isinstance(variables, dict):
-            raise ValueError('变量文件必须为 JSON 对象')
-        result = dispatch(args.角色, args.集, variables, args.输出,
-                          mode=args.模式, scope=args.范围, timeout=args.超时, prompt_file=args.提示词)
+        if args.应用结果:
+            if args.角色 != '角色卡' or not args.审核 or args.变量 or args.输出 or args.模式 or args.范围 or args.提示词:
+                raise ValueError('应用结果只允许角色卡，必须显式提供--审核，不混用派发参数')
+            from .rolecard import apply_rolecard_result
+            result = apply_rolecard_result(args.集, args.应用结果, args.审核)
+        else:
+            if not args.变量 or not args.输出 or args.审核:
+                raise ValueError('派发必须提供--变量和--输出；--审核仅用于--应用结果')
+            variables = load(Path(args.变量))
+            if not isinstance(variables, dict):
+                raise ValueError('变量文件必须为 JSON 对象')
+            result = dispatch(args.角色, args.集, variables, args.输出,
+                              mode=args.模式, scope=args.范围, timeout=args.超时, prompt_file=args.提示词)
     except (OSError, ValueError, RuntimeError) as exc:
         result = {'通过': False, '错误': _safe(str(exc), config.get_environment())}
     print(json.dumps(result, ensure_ascii=False))

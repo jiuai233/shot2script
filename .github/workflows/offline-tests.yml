@@ -1,0 +1,44 @@
+name: Offline production checks
+on:
+  push:
+    branches: [feat/deepseek-production-pipeline]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  benchmark-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install lightweight testing dependencies
+        run: python -m pip install pytest httpx pillow jsonschema
+      - name: Run safe offline benchmark tests (no model calls)
+        run: python -m pytest -q tests/test_benchmark_dp.py
+      - name: Confirm benchmark CLI defaults to offline-only
+        run: python tools/benchmark_dp.py --prompt prompts/04-动作识别.md --variants pi-attach,direct
+  fixed-episode-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install locked project dependencies
+        run: python -m pip install uv && uv sync --frozen
+      - name: Check fixed scheduling and existing publication gates without live models
+        run: >-
+          uv run pytest -q -m 'not live'
+          tests/test_fixed_episode.py tests/test_fixed_episode_edges.py tests/test_request_ledger.py
+          tests/test_action_placement.py tests/test_production_script.py tests/test_rolecard_apply.py
+          tests/test_rolecard_two_stage.py tests/test_formal_publication.py
+          tests/test_production_pipeline.py tests/test_production_pipeline_edges.py tests/test_t1_runners.py

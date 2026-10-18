@@ -28,6 +28,8 @@ def migrate(sounds, decisions):
             continue
         mapped.update(r["id"] for r in decided)
         same = (len(overlaps) == 1 and len(decided) == 1 and
+                row["文本"] == decided[0]["文本"] and
+                not ("原始文本" in row.get("核对", {}) and resolved[decided[0]["id"]]["决定"] in ("主路", "副路")) and
                 row["起"] == decided[0]["起"] and row["止"] == decided[0]["止"] and
                 sum(decided[0] in values for values in intersections.values()) == 1 and
                 resolved[decided[0]["id"]]["决定"] != "删除")

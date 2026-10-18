@@ -70,7 +70,7 @@
           "anyOf": [
             {
               "type": "string",
-              "pattern": "^C[0-9]{3,}$"
+              "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-N[0-9]{3,})$"
             },
             {
               "type": "string",

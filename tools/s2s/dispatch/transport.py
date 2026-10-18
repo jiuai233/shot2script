@@ -55,11 +55,11 @@ def decode_response(raw: str) -> Response:
 
 @contextmanager
 def pi_options(settings: dict, *, read_paths=(), session_dir: Path | None = None, controller=False):
-    """临时可执行适配器直接 exec pi，超时终止的是 pi 本身。"""
+    """临时可执行适配器直接 exec pi，超时终止的是 pi 本身；直连运行器改为返回同格式事件。"""
     if settings.get('runner', 'pi') != 'pi':
         if controller or read_paths:
             raise ValueError('工具读取和主控会话要求 pi 运行器')
-        yield {}
+        yield {'events': True}
         return
     executable = settings.get('bin') or config.get_runner_config('pi').get('bin', 'pi')
     executable = shutil.which(executable) or executable

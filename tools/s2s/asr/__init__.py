@@ -2,13 +2,9 @@
 
 from ..config import get_asr_backend
 from .base import ASRBackend, Sentence
-from .doubao import DoubaoBackend
-from .grok import GrokBackend
 from .local import LocalBackend
 
 BACKENDS: dict[str, type[ASRBackend]] = {
-    "grok": GrokBackend,
-    "doubao": DoubaoBackend,
     "local": LocalBackend,
 }
 

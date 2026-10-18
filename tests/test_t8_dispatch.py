@@ -6,6 +6,7 @@ import sys
 
 import pytest
 
+from s2s import config
 from s2s.dispatch.controllers import episode_prompt, mark_step, start_controller
 from s2s.dispatch.materials import assemble, render
 from s2s.dispatch.results import extract_json, extract_result, validate_result
@@ -32,6 +33,8 @@ def board(tmp_path):
     save(episode / '声音记录.json', [{'id': 'E01-S001', '起': '00:00.1', '止': '00:00.9', '文本': '对白隔离哨兵', '声线': 'E01-V1', '听辨': '清楚'}])
     save(episode / '字幕记录.json', [{'起': '00:00.1', '止': '00:00.9', '文字': '台词字幕隔离哨兵', '类型': '台词字幕'},
                                   {'起': '00:00.1', '止': '00:00.9', '文字': '地点文字', '类型': '地点字幕'}])
+    save(episode / '临时人物.json', [{'id': 'E01-P01-T1', '片段': 'E01-P01', '外观': '紫衣双马尾小女孩',
+         '出现镜头': ['E01-K001'], '映射': None, '映射依据': ''}])
     save(episode / '动作记录.json', [{'动作': '动作隔离哨兵', '确定度': '确认'}])
     save(episode / '归属表.json', [{'依据': '归属隔离哨兵', '确定度': '确认'}])
     for name in ('对照表', '待核对', '问题清单'):
@@ -49,7 +52,8 @@ def action_result():
     return {'片段': 'E01-P01', '模式': '片段识别', '镜头': [
         {'镜头': 'E01-K001', '起': '00:00.0', '止': '00:01.0',
          '场景信息': {'地点': '门口', '日夜': '日', '内外': '外', '闪回迹象': None},
-         '画面人物': [{'人物': 'E01-P01-T1', '外观': '紫衣双马尾小女孩', '位置': '左侧'}],
+         '画面人物': [{'人物': 'E01-P01-T1', '外观': '紫衣双马尾小女孩', '位置': '左侧',
+                   '依据帧': ['K001_01.jpg']}],
          '动作': [], '神态': [], '口型': [], '画面文字': [], '说明': '无明显动作'}],
         '衔接': {'承接前段': '', '延续到后段': ''}, '加密取帧请求': [], '待核对': []}
 
@@ -93,7 +97,9 @@ def test_draft_has_no_frames(board):
 def test_role_card_projects_no_actions(board, action_result):
     save(board / '派发结果/动作识别/E01-P01.json', action_result)
     p = assemble('角色卡', board, {})
-    assert '人物与口型' in p.prompt and '紫衣双马尾小女孩' in p.prompt
+    assert '候选人物' in p.prompt and '紫衣双马尾小女孩' in p.prompt
+    assert '对白隔离哨兵' not in p.prompt and '台词字幕隔离哨兵' not in p.prompt
+    assert p.view_all and len(p.images) == 1
     assert '动作隔离哨兵' not in p.prompt
     assert '无明显动作' not in p.prompt
 
@@ -132,9 +138,70 @@ def test_validation(board, action_result):
     assert validate_result('动作识别', {'片段': 'E01-P01'}, board, p)
 
 
+@pytest.mark.parametrize('identifier', ['E01-P01-T1', 'C001'])
+@pytest.mark.parametrize('invalid', ['missing', [], 'K001_01.jpg', [None], ['bad.jpg']])
+def test_person_frame_schema_is_required(board, action_result, identifier, invalid):
+    if identifier == 'C001':
+        save(board.parent / '角色卡.json', [{'id': 'C001', '名称': '小女孩', '外观': '紫衣双马尾', '状态': '已确认'}])
+    p = assemble('动作识别', board, {'片段号': 'E01-P01'})
+    person = action_result['镜头'][0]['画面人物'][0]
+    person['人物'] = identifier
+    if invalid == 'missing':
+        person.pop('依据帧')
+    else:
+        person['依据帧'] = invalid
+    errors = validate_result('动作识别', action_result, board, p)
+    assert errors and all('依据帧' in e for e in errors)
+
+
+def test_static_people_can_share_frame_and_empty_shot_is_allowed(board, action_result):
+    p = assemble('动作识别', board, {'片段号': 'E01-P01'})
+    row = action_result['镜头'][0]
+    row['画面人物'].append({'人物': 'E01-P01-T2', '外观': '黑衣短发', '位置': '右后方',
+                            '依据帧': ['K001_01.jpg']})
+    assert row['动作'] == row['神态'] == []
+    assert validate_result('动作识别', action_result, board, p) == []
+    row['画面人物'] = []
+    assert validate_result('动作识别', action_result, board, p) == []
+
+
+@pytest.mark.parametrize('case', ['bridge', 'unsent_dense', 'other_shot_dense', 'missing_shot', 'missing_shot_normal'])
+def test_person_frames_require_current_shot_authorization(board, action_result, case):
+    p = assemble('动作识别', board, {'片段号': 'E01-P01'})
+    person = action_result['镜头'][0]['画面人物'][0]
+    if case == 'bridge':
+        person['依据帧'] = ['K002_01.jpg']  # 已送出的衔接帧也不能跨镜头引用。
+    elif case == 'missing_shot_normal':
+        p.shots = [s for s in p.shots if s['id'] != 'E01-K001']
+    else:
+        person['依据帧'] = ['t00-00.2.jpg']
+        if case == 'unsent_dense':
+            index = board / '素材/frames_dense/unsent/帧.json'
+            save(index, {'视频': 'video.mp4', '起': '00:00.0', '止': '00:00.5', '帧率': 2,
+                         '帧': [{'文件': 't00-00.2.jpg', '时间': '00:00.2'}]})
+            (index.parent / 't00-00.2.jpg').write_bytes(b'fake-frame')
+        if case != 'unsent_dense':
+            p.dense = [{'文件': 't00-00.2.jpg', '镜头': 'E01-K002' if case == 'other_shot_dense' else 'E01-K001'}]
+        if case == 'missing_shot':
+            p.shots = [s for s in p.shots if s['id'] != 'E01-K001']
+    errors = validate_result('动作识别', action_result, board, p)
+    assert 'E01-K001 引用了非本镜头依据帧' in errors
+    if case.startswith('missing_shot'):
+        assert 'E01-K001 缺少本次授权镜头' in errors
+    assert len(errors) == (2 if case.startswith('missing_shot') else 1)
+
+
+def test_expression_still_requires_current_shot_frame(board, action_result):
+    p = assemble('动作识别', board, {'片段号': 'E01-P01'})
+    action_result['镜头'][0]['神态'] = [{'人物': 'E01-P01-T1', '神态': '皱眉',
+                                       '时间': '00:00.1', '依据帧': ['K002_01.jpg']}]
+    assert validate_result('动作识别', action_result, board, p) == ['E01-K001 引用了非本镜头依据帧']
+
+
 def test_retry_and_log(board, action_result):
     calls = []
     def fake(role, prompt, **kwargs):
+        assert kwargs["model"] == config.PRODUCTION_MODEL
         calls.append(prompt)
         return '{}' if len(calls) == 1 else json.dumps(action_result)
     output = board / '派发结果/动作识别/E01-P01.json'
@@ -174,6 +241,22 @@ def test_resume_skips_completed_segment_and_changed_input_invalidates(board, act
         stream.write(b'changed')
     third = dispatch('动作识别', board, {'片段号': 'E01-P01'}, output, call=fake)
     assert not third['跳过'] and len(calls) == 2
+
+
+def test_cached_action_result_without_person_frames_is_revalidated(board, action_result):
+    calls = []
+
+    def fake(*args, **kwargs):
+        calls.append(1)
+        return json.dumps(action_result)
+    output = board / '派发结果/动作识别/E01-P01.json'
+    dispatch('动作识别', board, {'片段号': 'E01-P01'}, output, call=fake)
+    old = copy.deepcopy(action_result)
+    old['镜头'][0]['画面人物'][0].pop('依据帧')
+    save(output, old)
+    result = dispatch('动作识别', board, {'片段号': 'E01-P01'}, output, call=fake)
+    assert not result['跳过'] and len(calls) == 2
+    assert json.loads(output.read_text(encoding='utf-8')) == action_result
 
 
 def test_runtime_error_is_not_retried(board):
@@ -259,6 +342,9 @@ def test_dense_frames_and_path_boundary(board, action_result):
     (dense.parent / 't00-00.2.jpg').write_bytes(b'image')
     p = assemble('动作识别', board, {'片段号': 'E01-P01', '加密帧索引': [str(dense.relative_to(board))]}, mode='定向复看', scope='检查姿势')
     assert len(p.images) == 3 and p.dense[0]['镜头'] == 'E01-K001'
+    action_result['模式'] = p.mode
+    action_result['镜头'][0]['画面人物'][0]['依据帧'] = ['t00-00.2.jpg']
+    assert validate_result('动作识别', action_result, board, p) == []
     with pytest.raises(ValueError, match='必须位于本集'):
         assemble('动作识别', board, {'片段号': 'E01-P01', '加密帧索引': ['../../secret.json']})
     shots = json.loads((board / '镜头表.json').read_text())
@@ -305,10 +391,10 @@ def test_other_role_validation(board, action_result):
     role_packet = assemble('角色卡', board, {})
     roles = {'模式': '建立', '临时人物映射': [], '新增人物': [], '补充资料': [],
              '对白归属': [], '变更申请': [], '待核对': [], '性格总结': []}
-    assert any('覆盖全部对白句' in e for e in validate_result('角色卡', roles, board, role_packet))
+    assert any('两阶段建立入口' in e for e in validate_result('角色卡', roles, board, role_packet))
     draft_packet = assemble('成稿', board, {})
     draft = {'工作稿': (board / '工作稿.md').read_text(), '对照表': []}
-    assert validate_result('成稿', draft, board, draft_packet) == []
+    assert validate_result('成稿', draft, board, draft_packet)  # 缺少确认记录与对照表，不能视为合格成稿。
     review_packet = assemble('验收', board, {})
     review = {'模式': '全文审查', '集': 1, '审查范围': {'行': '1-4', '场景': ['场景1-1'], '镜头': 'E01-K001', '对白句': 'E01-S001'},
               '问题': [], '复核': [], '统计': {'阻断': 0, '规范': 0}, '结论': '通过'}

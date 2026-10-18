@@ -78,11 +78,20 @@
                   },
                   "位置": {
                     "type": "string"
+                  },
+                  "依据帧": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(K[0-9]{3,}_[0-9]{2}|t[0-9]{2}-[0-5][0-9]\\.[0-9])\\.jpg$"
+                    },
+                    "minItems": 1
                   }
                 },
                 "required": [
                   "人物",
-                  "位置"
+                  "位置",
+                  "依据帧"
                 ],
                 "additionalProperties": false
               }
@@ -397,6 +406,60 @@
     ],
     "additionalProperties": false
   },
+  "人物合并": {
+    "type": "object",
+    "properties": {"分组": {"type": "array", "items": {
+      "type": "object",
+      "properties": {
+        "成员": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*$"}},
+        "已有角色": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^C[0-9]{3,}$"}]},
+        "名称": {"type": "string", "minLength": 1},
+        "名称类型": {"enum": ["姓名", "描述名"]},
+        "外观": {"type": "string", "minLength": 1},
+        "依据": {"type": "string", "minLength": 1},
+        "确定度": {"enum": ["确认", "存疑"]},
+        "待核对": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "required": ["成员", "已有角色", "名称", "名称类型", "外观", "依据", "确定度", "待核对"],
+      "additionalProperties": false
+    }}},
+    "required": ["分组"], "additionalProperties": false
+  },
+  "对白归属": {
+    "type": "object",
+    "properties": {
+      "对白归属": {"type": "array", "items": {
+        "type": "object",
+        "properties": {
+          "句": {"type": "string", "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"},
+          "说话人": {"anyOf": [{"type": "null"}, {"type": "string", "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-N[0-9]{3,})$"}]},
+          "形态": {"enum": ["画内", "画外", "心声", "设备", null]},
+          "形态待核对": {"type": "string", "pattern": "\\S"},
+          "依据": {"type": "string", "minLength": 1},
+          "确定度": {"enum": ["确认", "存疑"]}
+        },
+        "required": ["句", "说话人", "形态", "依据", "确定度"], "additionalProperties": false,
+        "allOf": [{"if": {"properties": {"形态": {"type": "null"}}}, "then": {"required": ["形态待核对"]}}]
+      }},
+      "补充建议": {"type": "array", "items": {
+        "type": "object", "properties": {
+          "角色": {"type": "string", "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-N[0-9]{3,})$"},
+          "外观": {"type": "string"}, "依据": {"type": "string", "minLength": 1}
+        }, "required": ["角色", "依据"], "additionalProperties": false
+      }},
+      "待核对": {"type": "array", "items": {
+        "type": "object", "properties": {
+          "位置": {"type": "object", "properties": {
+            "句": {"type": "string", "pattern": "^E[0-9]{2,}-S[0-9]{3,}$"},
+            "镜头": {"type": "string", "pattern": "^E[0-9]{2,}-K[0-9]{3,}$"}
+          }, "required": ["句"], "additionalProperties": false},
+          "问题": {"type": "string", "minLength": 1}, "需要": {"type": "string"},
+          "级别": {"enum": ["阻断", "规范"]}
+        }, "required": ["位置", "问题", "级别"], "additionalProperties": false
+      }}
+    },
+    "required": ["对白归属", "补充建议", "待核对"], "additionalProperties": false
+  },
   "角色卡": {
     "type": "object",
     "properties": {
@@ -488,7 +551,7 @@
           "properties": {
             "角色": {
               "type": "string",
-              "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-P[0-9]{2,}-T[1-9][0-9]*)$"
+              "pattern": "^(C[0-9]{3,}|E[0-9]{2,}-N[0-9]{3,})$"
             },
             "外观": {
               "type": "string"
@@ -735,6 +798,18 @@
       },
       "改动对照": {
         "type": "array"
+      },
+      "动作排布": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "动作": {"type": "string", "pattern": "^E[0-9]{2,}-A[0-9]{4,}$"},
+            "排布": {"type": "object"}
+          },
+          "required": ["动作", "排布"],
+          "additionalProperties": false
+        }
       }
     },
     "required": [

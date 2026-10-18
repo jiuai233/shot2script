@@ -2,21 +2,6 @@
   "asr": {
     "provider": "local",
     "backends": {
-      "grok": {
-        "api_base": "https://api.x.ai/v1",
-        "model": "grok-voice-transcribe-2.0",
-        "key_env": "XAI_API_KEY",
-        "format": false,
-        "pause_seconds": 0.35,
-        "max_sentence_seconds": 6.0,
-        "min_speaker_seconds": 0.3
-      },
-      "doubao": {
-        "api_base": "https://ark.cn-beijing.volces.com/api/v3",
-        "model": "doubao-seed-2-0-lite-260428",
-        "key_env": "ARK_DOUBAO_API_KEY",
-        "proxy_env": "ARK_DOUBAO_PROXY"
-      },
       "local": {
         "model": "qwen3-asr-0.6b",
         "python_executable": "/Users/jiuai233/prj/shot2script/envs/local-asr/bin/python",
@@ -26,13 +11,8 @@
         "timeout_seconds": 300
       }
     },
-    "cross_check": {
-      "enabled": true,
-      "primary": "local",
-      "secondary": "grok"
-    },
     "segmentation": {
-      "min_pause": 0.5,
+      "min_pause": 0.3,
       "max_sentence": 6.0,
       "vad": {
         "python_executable": "/Users/jiuai233/prj/shot2script/envs/local-asr/bin/python",
@@ -42,15 +22,15 @@
     }
   },
   "vision": {
-    "runner": "pi",
-    "model": "opencode-go/deepseek-v4.1-flash",
+    "runner": "deepseek",
+    "model": "deepseek/deepseek-flash",
     "thinking": "high",
-    "max_images_per_call": 12
+    "max_images_per_call": 64
   },
   "agents": {
     "default": {
       "runner": "pi",
-      "model": "openai-codex/gpt-6.1-sol",
+      "model": "deepseek/deepseek-flash",
       "thinking": "high"
     },
     "全剧主控": {
@@ -69,7 +49,7 @@
       "use": "default"
     },
     "验收": {
-      "use": "vision"
+      "use": "default"
     }
   },
   "runners": {
@@ -78,12 +58,15 @@
     },
     "opencode": {
       "bin": "opencode"
+    },
+    "deepseek": {
+      "base_url": "https://api.deepseek.com",
+      "api_key_env": "DEEPSEEK_API_KEY"
     }
   },
   "allowed_models": {
-    "opencode-go": [
-      "deepseek-v4.1-flash",
-      "glm-5.3-flash"
+    "deepseek": [
+      "deepseek-flash"
     ]
   },
   "diarize": {
@@ -91,13 +74,8 @@
     "model": "campp",
     "threshold": 0.6,
     "constraints": [
-      "grok",
-      "lipsync",
-      "max_speakers"
+      "lipsync"
     ],
-    "grok_weight": 0.15,
-    "grok_purity": 0.7,
-    "grok_min_similarity": 0.2,
     "threads": 2
   }
 }
