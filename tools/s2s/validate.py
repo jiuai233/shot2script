@@ -464,6 +464,11 @@ def validate_file(file: str | Path, data_type: str | None = None) -> dict:
                         p.get('位置', {}).get('句') == row['句'] and p.get('级别') == '阻断'
                         and p.get('状态') not in ('已修正', '已裁定') for p in pending or []):
                     fail((i, '说话人'), 'null归属仅限存疑且须有同句未决阻断')
+            if row['形态'] is None or row.get('形态待核对'):
+                pending, problem = load_companion('待核对')
+                if problem or not any(p.get('位置', {}).get('句') == row['句'] and p.get('级别') == '阻断'
+                                      and p.get('状态') not in ('已修正', '已裁定') for p in pending or []):
+                    fail((i, '形态'), '形态待核对须有同句未决阻断，已确认身份证据仍保留')
     if kind == '口型记录':
         source, problem = load_companion('声音记录')
         if problem:

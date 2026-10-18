@@ -111,6 +111,8 @@ def lint_text(text: str, roles: list[dict] | None = None, *, formal: bool = Fals
                 fail(i, '场景后人物行', line)
         elif kind == '人物行':
             for name in _names(line):
+                if not formal and PENDING_SPEAKER_RE.fullmatch(name):
+                    continue
                 if invalid_name(name):
                     fail(i, '非法人物名称', name)
                 elif known is not None and name not in known:

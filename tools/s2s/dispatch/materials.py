@@ -116,6 +116,7 @@ class Package:
     mode: str = ''
     scope: str = ''
     dense: list[dict] = field(default_factory=list)
+    require_placement: bool = False
 
     def signature(self):
         return {'模式': self.mode, '范围': self.scope, '提示词': self.prompt, '系统': self.system,
@@ -149,6 +150,7 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
         return _package(episode, '人物合并', {'候选人物': materials['临时人物'], '已确认角色': _confirmed(episode),
                         '身份证据字幕': materials['身份证据字幕']}, materials['images'], materials['labels'], prompt_file=prompt_file)
     packet = Package('', mode=mode, scope=str(scope))
+    packet.require_placement = role == '成稿' and variables.get('固定动作排布') is True
     data = {}
 
     def read(name, *, series=False, optional=False):
@@ -360,6 +362,11 @@ def assemble(role: str, episode: Path, variables: dict, mode=None, scope=None, *
         packet.prompt += '\n'.join(map(str, packet.images))
     if role == '成稿':
         packet.prompt += '\n返回一个 JSON 对象：工作稿为完整正文字符串，对照表为数组；定向改写另含改动对照数组。'
+        if variables.get('固定动作排布'):
+            packet.prompt += ('\n固定单集合同：同次返回动作排布数组，每个正文实际呈现动作恰好一项：'
+                              '{动作:动作ID, 排布:{位置:对白括号或独立△, 句:实际关联句或null, 依据:原记录与时序依据, 表述:正文采用的完整表述}}。'
+                              '不改变执行者、对象、事实和时间；未确认身份的动作留在待核对，不能写成正文事实。'
+                              '已确认说话人但形态待核对时保留该姓名及身份证据，在行尾引用对应待核对Q；不要伪造词时间拆句。')
     else:
         packet.prompt += '\n只返回符合系统提示中返回包 Schema 的一个 JSON 对象，不附推理过程。'
     schema = load(Path(__file__).with_name('role_schemas.json'))[role]

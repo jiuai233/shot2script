@@ -179,9 +179,12 @@ PHASES = (
 )
 
 
-def input_version(episode, names):
+def input_version(episode, names, *, optional_lipsync=False):
     result = {}
     for name in names:
+        if optional_lipsync and name == '口型记录.json' and not (episode / name).is_file():
+            result[name] = None
+            continue
         if name == '声音记录.json':
             result[name] = read(episode / name)
         else:
@@ -189,7 +192,7 @@ def input_version(episode, names):
     return result
 
 
-def prepare_episode(video, episode):
+def prepare_episode(video, episode, *, optional_lipsync=False):
     path = episode / '生产任务.json'
     job = read(path) if path.is_file() else {}
     job.setdefault('阶段', {})
@@ -205,8 +208,11 @@ def prepare_episode(video, episode):
             raise ValueError('镜头表已绑定其他视频；请使用新的剧名或集号')
     job['视频'] = source
     for name, operation, inputs, outputs in PHASES:
-        version = input_version(episode, inputs)
+        version = input_version(episode, inputs, optional_lipsync=optional_lipsync)
         previous = job['阶段'].get(name, {})
+        if (optional_lipsync and name == '口型' and previous.get('状态') == '降级'
+                and previous.get('输入') == version and not (episode / '口型记录.json').exists()):
+            continue
         if (previous.get('状态') == '完成' and previous.get('输入') == version
                 and all((episode / p).is_file() for p in outputs)):
             if name != '镜头' or all((episode / '素材/frames' / f['文件']).is_file()
@@ -220,15 +226,27 @@ def prepare_episode(video, episode):
             for output in outputs:
                 if not (episode / output).is_file():
                     raise ValueError(f'{name}未产出 {output}')
-            job['阶段'][name] = {'状态': '完成', '输入': input_version(episode, inputs)}
+            job['阶段'][name] = {'状态': '完成', '输入': input_version(episode, inputs, optional_lipsync=optional_lipsync)}
             write(path, job)
         except (OSError, ValueError, RuntimeError, ImportError, subprocess.SubprocessError) as exc:
+            if optional_lipsync and name == '口型':
+                output = episode / '口型记录.json'
+                if output.exists():
+                    backup = episode / '素材/口型' / ('失败-' + str(output.stat().st_mtime_ns) + '.json')
+                    backup.parent.mkdir(parents=True, exist_ok=True)
+                    output.replace(backup)
+                job['阶段'][name] = {'状态': '降级', '输入': version, '错误': str(exc),
+                                     '证据状态': '缺失；不能作为否定证据'}
+                write(path, job)
+                continue
             job.update(状态='失败', 错误=str(exc))
             write(path, job)
             raise
     # 声纹步骤可能补充异常字段；记录最终口型输入，避免下次因自身输出重复运行。
-    job['阶段']['口型']['输入'] = input_version(episode, ('镜头表.json', '声音记录.json'))
+    job['阶段']['口型']['输入'] = input_version(episode, ('镜头表.json', '声音记录.json'), optional_lipsync=optional_lipsync)
     for name in ('镜头表', '片段表', '声音记录', '字幕记录', '口型记录', '声纹聚类', '声纹候选'):
+        if name == '口型记录' and optional_lipsync and not (episode / f'{name}.json').is_file():
+            continue
         require(validate_file(episode / f'{name}.json'), name)
     job.update(状态='素材就绪', 当前阶段='主控', 错误=None)
     write(path, job)
@@ -259,7 +277,7 @@ def check_episode_delivery(episode):
     return result
 
 
-def run_episode(series, number, *, video=None, mode='完整转写', review='', timeout=900):
+def _run_episode_controller(series, number, *, video=None, mode='完整转写', review='', timeout=900):
     from .dispatch.controllers import ensure_state, episode_number, episode_prompt, start_controller
     number = episode_number(number)
     if mode not in ('完整转写', '定向复核') or mode == '定向复核' and not review.strip():
@@ -290,6 +308,20 @@ def run_episode(series, number, *, video=None, mode='完整转写', review='', t
         job.update(状态='失败', 错误=str(exc))
         write(job_path, job)
         raise
+
+
+def run_episode(series, number, *, video=None, mode='完整转写', review='', timeout=900,
+                scheduler='主控', run_root=None, fixture=None, approvals=None, max_requests=100, preflight=False):
+    """生产默认保留原Pi主控；固定单集E0须显式选择，当前仅离线可运行。"""
+    if scheduler == '主控':
+        if any((run_root, fixture, approvals, preflight)):
+            raise ValueError('旧主控不接受固定调度的运行目录、夹具、审核或预检参数')
+        return _run_episode_controller(series, number, video=video, mode=mode, review=review, timeout=timeout)
+    if scheduler != '固定' or mode != '完整转写' or review:
+        raise ValueError('固定首阶段只支持完整单集；定向复核请显式使用 --调度 主控')
+    from .fixed_pipeline import run_fixed_episode
+    return run_fixed_episode(series, number, video=video, run_root=run_root, fixture=fixture,
+                             approvals=approvals, timeout=timeout, max_requests=max_requests, preflight=preflight)
 
 
 def export_series(series, count):
