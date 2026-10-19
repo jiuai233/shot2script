@@ -406,7 +406,7 @@ def test_fusion_inputs_keep_sentences_and_issues(sample):
 
 def test_fusion_prompt_contains_one_consistent_set_of_script_rules():
     prompt = (ROOT / "prompts/mvp/融合写稿.md").read_text()
-    for rule in ("逐字使用一次", "合成一行", "{{P001}}", "场景", "人物：", "△", "画外", "打电话", "接电话",
+    for rule in ("逐字使用一次", "合成一行", "{{P001}}", "场景", "人物：", "△", "画外", "电话音", "对着电话",
                  "关系称谓", "待核对", "字卡", "画面人物"):
         assert rule in prompt
     assert "声纹" not in prompt and "声线" not in prompt
