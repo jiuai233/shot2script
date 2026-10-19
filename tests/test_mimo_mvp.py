@@ -410,6 +410,9 @@ def test_fusion_prompt_contains_one_consistent_set_of_script_rules():
                  "关系称谓", "待核对", "字卡", "画面人物"):
         assert rule in prompt
     assert "声纹" not in prompt and "声线" not in prompt
+    # 提示词示例不得带样片人名，以免测试结果被示例带偏。
+    for path in (ROOT / "prompts/mvp").glob("*.md"):
+        assert not any(name in path.read_text() for name in ("桂芝", "桂枝", "秋慧", "林慧", "朵朵"))
     for obsolete in ("遵守附带的成稿内容规则", "可以合成一行", "交回主控", "主控确认的 `排布`"):
         assert obsolete not in prompt
 
