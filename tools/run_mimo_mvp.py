@@ -3,6 +3,7 @@
 
 import argparse
 import base64
+from difflib import SequenceMatcher
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
@@ -19,10 +20,11 @@ import time
 import httpx
 from dotenv import dotenv_values
 from jsonschema import validate, ValidationError
+from pypinyin import pinyin, Style
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
-from s2s import audio
+from s2s import audio, subtitles
 from s2s.asr.postprocess import seconds
 from s2s.asr.single import segment
 from s2s.vad import detect, waveform
@@ -43,6 +45,8 @@ LOCAL_PYTHON = ROOT / "envs/local-asr/bin/python"
 ALIGNER = ROOT / "models/asr/qwen3-aligner-0.6b"
 STREAM_IDLE_SECONDS = 60
 STREAM_TOTAL_SECONDS = 600
+SUBTITLE_FPS = 2
+SUBTITLE_FIX_CHARS = 2
 TZ = timezone(timedelta(hours=8))
 STRING = {"type": "string"}
 NULLABLE = {"type": ["string", "null"]}
@@ -123,6 +127,51 @@ def fusion_inputs(episode, total, speech, vision, confirmed_names=()):
     if confirmed_names:
         inputs["已确认人物命名"] = confirmed_names
     return inputs
+
+
+def read_subtitles(video, directory):
+    """按固定帧率取帧，本地识别画面文字并合并为带时间的字幕记录。"""
+    directory.mkdir()
+    subprocess.run(["ffmpeg", "-v", "error", "-i", str(video), "-vf", f"fps={SUBTITLE_FPS}",
+                    str(directory / "%05d.jpg")], check=True, capture_output=True, timeout=300)
+    paths = sorted(directory.glob("*.jpg"))
+    raw = subtitles.recognize(paths)
+    for index, (row, path) in enumerate(zip(raw, paths)):
+        row.update(path=str(path), time=index / SUBTITLE_FPS)
+    return subtitles.merge_records(raw)[0]
+
+
+def homophone(a, b):
+    readings = lambda c: set(pinyin(c, style=Style.NORMAL, heteronym=True)[0])
+    return bool(readings(a) & readings(b))
+
+
+def subtitle_fixes(sounds, records):
+    """转写与台词字幕只差个别同音汉字时按字幕改字；增删字、数字、非同音及较长差异保留转写。"""
+    lines = sorted((r for r in records if r["类型"] == "台词字幕"), key=lambda r: seconds(r["起"]))
+    # 同一时段识别出多条时，只保留置信度最高的一条。
+    kept = [r for r in lines if not any(
+        o is not r and o["置信度"] > r["置信度"]
+        and seconds(o["起"]) <= seconds(r["止"]) and seconds(r["起"]) <= seconds(o["止"]) for o in lines)]
+    chars = [(i, j) for i, sound in enumerate(sounds) for j, c in enumerate(sound["文本"])
+             if subtitles.normalize(c)]
+    heard = "".join(subtitles.normalize(sounds[i]["文本"][j]) for i, j in chars)
+    shown = "".join(subtitles.normalize(r["文字"]) for r in kept)
+    texts = [list(sound["文本"]) for sound in sounds]
+    for op, a1, a2, b1, b2 in SequenceMatcher(None, heard, shown, autojunk=False).get_opcodes():
+        if (op == "replace" and a2 - a1 == b2 - b1 <= SUBTITLE_FIX_CHARS
+                and re.fullmatch(r"[\u4e00-\u9fff]+", heard[a1:a2] + shown[b1:b2])
+                and all(map(homophone, heard[a1:a2], shown[b1:b2]))):
+            for k in range(a2 - a1):
+                i, j = chars[a1 + k]
+                texts[i][j] = shown[b1 + k]
+    fixes = []
+    for sound, text in zip(sounds, texts):
+        text = "".join(text)
+        if text != sound["文本"]:
+            fixes.append({"句": sound["id"], "时间": sound["起"], "转写": sound["文本"], "字幕": text})
+            sound["文本"] = text
+    return fixes
 
 
 def parallel_branches(speech, vision):
@@ -304,6 +353,8 @@ def final_review(review, fusion, speech, vision, checks):
     for label, values in (("融合未决", fusion["未决问题"]), ("视频待核对", vision["待核对"]),
                           ("语音待核对", speech["待核对"])):
         issues.extend({"来源": label, **p, "级别": "规范"} for p in values)
+    issues.extend({"来源": "字幕校字", **issue(f"台词按画面字幕校字：{f['转写']} → {f['字幕']}",
+                                              句=f["句"], 时间=f["时间"])} for f in speech.get("字幕校字", []))
     issues.extend({"来源": "人物映射", **issue("人物映射待核对", 人物=p["id"])} for p in fusion["人物"] if p["待核对"])
     blocking = [p for p in issues if p.get("级别") == "阻断"]
     listed = [p for p in issues if p.get("级别") != "阻断"]
@@ -468,11 +519,16 @@ class Run:
                 for sound in sounds:
                     sound.pop("声线", None)
                 save(self.artifacts / "切句.json", {"句列表": sounds, "疑似漏段": missing})
+            with self.stage("字幕校字"):
+                records = read_subtitles(self.video, self.artifacts / "字幕帧")
+                save(self.artifacts / "字幕记录.json", records)
+                fixes = subtitle_fixes(sounds, records)
+                save(self.artifacts / "字幕校字.json", fixes)
             pending = [issue("；".join(sound["核对"]["异常"]), 句=sound["id"], 时间=sound["起"])
                        for sound in sounds if sound["核对"]["异常"]]
             pending.extend(issue("有人声但没有识别词，疑似漏段", 时间=m) for m in missing)
             result = {"ASR全文": text, "词时间": alignment["words"], "句列表": sounds,
-                      "疑似漏段": missing, "待核对": pending}
+                      "疑似漏段": missing, "待核对": pending, "字幕校字": fixes}
             save(self.artifacts / "语音结果.json", result)
             return result
 

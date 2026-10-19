@@ -16,6 +16,7 @@ dependencies = [
     "sherpa-onnx==1.13.8",
     "numpy>=2",
     "sherpa-onnx-core==1.13.8",
+    "pypinyin>=0.55.0",
 ]
 
 [build-system]

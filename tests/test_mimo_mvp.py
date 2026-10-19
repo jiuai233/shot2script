@@ -209,6 +209,8 @@ def test_full_chain_four_calls_text_check(tmp_path, monkeypatch, sample, corrupt
         return SimpleNamespace(returncode=0, stderr="")
 
     monkeypatch.setattr(mvp.subprocess, "run", align)
+    monkeypatch.setattr(mvp, "read_subtitles", lambda video, directory: [
+        {"起": "00:00.5", "止": "00:01.5", "文字": "你好", "类型": "台词字幕", "置信度": 1.0}])
 
     def handler(request):
         payload = json.loads(request.content)
@@ -264,6 +266,7 @@ def test_full_chain_four_calls_text_check(tmp_path, monkeypatch, sample, corrupt
     assert run.record["流程状态"] == "完成"
     assert result["结论"] == ("不通过" if corrupt_draft else "通过")
     assert run.record["内容结论"] == result["结论"]
+    assert run.record["阶段"]["字幕校字"]["状态"] == "完成"
     assert {"工作稿.md", "人物归属.json", "核对结果.json", "运行记录.json", "阶段产物"} <= {p.name for p in run.output.iterdir()}
     record = (run.output / "运行记录.json").read_text()
     assert all(key not in record for key in KEYS.values())
@@ -519,3 +522,34 @@ def test_merged_line_must_keep_one_speaker_and_exact_text(sample):
     speech, vision, fusion = two_sentences(sample)
     fusion["工作稿"] = fusion["工作稿"].replace("你好。吃了吗？", "你好。")
     assert any(p["依据"] == "正文台词与原句不一致" for p in mvp.fixed_checks(fusion, speech, vision, 3))
+
+
+def subtitle(start, end, text, confidence=1.0, kind="台词字幕"):
+    return {"起": start, "止": end, "文字": text, "类型": kind, "置信度": confidence}
+
+
+def test_subtitles_fix_homophones_only():
+    sounds = [{"id": "E01-S001", "起": "00:00.0", "文本": "桂枝，都四点四十多了，你还坐这儿啊？"},
+              {"id": "E01-S002", "起": "00:03.0", "文本": "他喝着东西呢。"}]
+    records = [subtitle("00:00.0", "00:02.0", "桂芝都4:40多了"), subtitle("00:02.0", "00:03.0", "你还坐这啊"),
+               subtitle("00:03.0", "00:04.0", "她喝着东西呢"), subtitle("00:03.0", "00:03.5", "她喝着乐西呢", .3),
+               subtitle("00:00.0", "00:09.0", "棋牌室", kind="地点字幕")]
+    fixes = mvp.subtitle_fixes(sounds, records)
+    assert [s["文本"] for s in sounds] == ["桂芝，都四点四十多了，你还坐这儿啊？", "她喝着东西呢。"]
+    assert fixes == [{"句": "E01-S001", "时间": "00:00.0", "转写": "桂枝，都四点四十多了，你还坐这儿啊？",
+                      "字幕": "桂芝，都四点四十多了，你还坐这儿啊？"},
+                     {"句": "E01-S002", "时间": "00:03.0", "转写": "他喝着东西呢。", "字幕": "她喝着东西呢。"}]
+
+
+def test_long_subtitle_difference_keeps_transcript():
+    sounds = [{"id": "E01-S001", "起": "00:00.0", "文本": "你今天回不回来吃饭？"}]
+    assert mvp.subtitle_fixes(sounds, [subtitle("00:00.0", "00:02.0", "你明晚回不回家吃饭")]) == []
+    assert sounds[0]["文本"] == "你今天回不回来吃饭？"
+
+
+def test_subtitle_fixes_are_listed_without_blocking(sample):
+    speech, vision, fusion, review = sample
+    speech["字幕校字"] = [{"句": "E01-S001", "时间": "00:00.5", "转写": "你号。", "字幕": "你好。"}]
+    result = mvp.final_review(review, fusion, speech, vision, [])
+    assert result["结论"] == "通过（附问题清单）"
+    assert result["问题清单"][0]["来源"] == "字幕校字" and "你号。 → 你好。" in result["问题清单"][0]["依据"]
