@@ -403,8 +403,8 @@ def test_fusion_inputs_keep_sentences_and_issues(sample):
 
 def test_fusion_prompt_contains_one_consistent_set_of_script_rules():
     prompt = (ROOT / "prompts/mvp/融合写稿.md").read_text()
-    for rule in ("每句独占一行", "{{P001}}", "场景", "人物：", "短动作", "△", "画外", "电话",
-                 "关系称谓", "待核对", "字卡"):
+    for rule in ("逐字使用一次", "合成一行", "{{P001}}", "场景", "人物：", "△", "画外", "打电话", "接电话",
+                 "关系称谓", "待核对", "字卡", "画面人物"):
         assert rule in prompt
     assert "声纹" not in prompt and "声线" not in prompt
     for obsolete in ("遵守附带的成稿内容规则", "可以合成一行", "交回主控", "主控确认的 `排布`"):
@@ -495,3 +495,27 @@ def test_long_speaker_bracket_is_listed(sample):
     long = fusion["工作稿"].replace("女子：", "女子（从口袋取出手机，手指滑动屏幕查找联系人）：")
     problems = mvp.fixed_checks({**fusion, "工作稿": long}, speech, vision, 2)
     assert [p["级别"] for p in problems] == ["规范"] and "括号" in problems[0]["依据"]
+
+
+def two_sentences(sample, second_person="P001"):
+    speech, vision, fusion, _ = sample
+    speech["句列表"].append({"id": "E01-S002", "起": "00:01.5", "止": "00:02.0", "文本": "吃了吗？"})
+    fusion["人物"].append({**fusion["人物"][0], "id": "P002", "名称": "穿黑外套的老人", "视觉人物": ["T002"]})
+    vision["人物"].append({"id": "T002"})
+    fusion["逐句归属"].append({**fusion["逐句归属"][0], "句": "E01-S002", "人物": second_person,
+                             "起": "00:01.5", "止": "00:02.0", "文本": "吃了吗？"})
+    fusion["工作稿"] = fusion["工作稿"].replace("你好。", "你好。吃了吗？")
+    return speech, vision, fusion
+
+
+def test_consecutive_sentences_of_one_speaker_merge_into_one_line(sample):
+    speech, vision, fusion = two_sentences(sample)
+    assert mvp.fixed_checks(fusion, speech, vision, 3) == []
+
+
+def test_merged_line_must_keep_one_speaker_and_exact_text(sample):
+    speech, vision, fusion = two_sentences(deepcopy(sample), "P002")
+    assert "阻断" in {p["级别"] for p in mvp.fixed_checks(fusion, speech, vision, 3)}
+    speech, vision, fusion = two_sentences(sample)
+    fusion["工作稿"] = fusion["工作稿"].replace("你好。吃了吗？", "你好。")
+    assert any(p["依据"] == "正文台词与原句不一致" for p in mvp.fixed_checks(fusion, speech, vision, 3))

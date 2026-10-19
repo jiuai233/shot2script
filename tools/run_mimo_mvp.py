@@ -240,7 +240,7 @@ def fixed_checks(fusion, speech, vision, total):
     for person in people.values():
         if any(v not in known_visual for v in person["视觉人物"]):
             problems.append(issue("人物映射引用不存在的视觉人物", 人物=person["id"]))
-    assigned_lines = []
+    assigned_lines, merged = [], {}
     for row in rows + fusion["采用动作"]:
         location = {"行": row["行"]}
         if "句" in row:
@@ -255,41 +255,45 @@ def fixed_checks(fusion, speech, vision, total):
             continue
         if "句" in row:
             assigned_lines.append(row["行"])
+            merged.setdefault(row["行"], []).append(row)
             source = original.get(row["句"])
             if source:
                 if row["文本"] != source["文本"]:
                     problems.append(issue("对照台词与原文不一致", **location))
                 if (row["起"], row["止"]) != (source["起"], source["止"]):
                     problems.append(issue("原句对齐时间被改动", **location))
-                # 冒号后仅允许原句和显式待核对标记，防止对照表正确而正文改字。
-                dialogue = lines[index].partition("：")[2]
-                dialogue = re.sub(r"【待核对[^】]*】", "", dialogue).strip()
-                if dialogue != source["文本"]:
-                    problems.append(blocker("正文台词与原句不一致", **location))
             if row["形态"] not in (None, "画内", "画外", "心声", "电话", "视频", "广播"):
                 problems.append(issue("声音形态无效，未知必须用 JSON null", **location))
             if row["人物"] is None or row["形态"] is None or row["待核对"]:
                 problems.append(issue("对白身份、形态或归属仍待核对", **location))
-            label = lines[index].partition("：")[0]
-            speaker = label.split("（", 1)[0].strip()
-            if row["人物"] in people and speaker != people[row["人物"]]["名称"]:
-                problems.append({**issue("正文说话人未使用归属表统一显示名", **location),
-                                 "类型": "人物指代与角色卡"})
-            bracket = re.search(r"（(.*)）", label)
-            if bracket and len(bracket[1]) > BRACKET_LIMIT:
-                problems.append({**issue(f"说话人括号超过 {BRACKET_LIMIT} 字，应改写 △", **location),
-                                 "类型": "动作与对白关联"})
         else:
             if row["动作"] not in known_actions:
                 problems.append(issue("采用动作引用不存在", **location))
             if any(p not in people for p in row["对象人物"]):
                 problems.append(issue("动作对象人物引用不存在", **location))
-    if len(assigned_lines) != len(set(assigned_lines)):
-        problems.append(blocker("多个原句引用同一正文行"))
+    # 同一人连续说的相邻原句可合成一行，正文须按序逐字相连。
+    for number, group in merged.items():
+        location = {"行": number, "句": [r["句"] for r in group]}
+        label, _, dialogue = lines[number - 1].partition("：")
+        if len(group) > 1 and len({(r["人物"], r["形态"]) for r in group}) > 1:
+            problems.append(blocker("同一正文行合并了不同说话人或形态的原句", **location))
+        if all(r["句"] in original for r in group):
+            dialogue = re.sub(r"【待核对[^】]*】", "", dialogue).strip()
+            if dialogue != "".join(original[r["句"]]["文本"] for r in group):
+                problems.append(blocker("正文台词与原句不一致", **location))
+        speaker = label.split("（", 1)[0].strip()
+        person = group[0]["人物"]
+        if person in people and speaker != people[person]["名称"]:
+            problems.append({**issue("正文说话人未使用归属表统一显示名", **location),
+                             "类型": "人物指代与角色卡"})
+        bracket = re.search(r"（(.*)）", label)
+        if bracket and len(bracket[1]) > BRACKET_LIMIT:
+            problems.append({**issue(f"说话人括号超过 {BRACKET_LIMIT} 字，应改写 △", **location),
+                             "类型": "动作与对白关联"})
     if assigned_lines != sorted(assigned_lines):
         problems.append(blocker("正文对白行顺序与原句顺序不一致"))
     for n, line in enumerate(lines, 1):
-        if "：" in line and not line.startswith(("场景", "人物：", "△", "第")) and n not in assigned_lines:
+        if "：" in line and not line.startswith(("场景", "人物：", "△", "第")) and n not in merged:
             problems.append(blocker("正文存在未关联原句的对白行", 行=n))
     return problems
 
